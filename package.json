@@ -20,6 +20,7 @@
     "@sparticuz/chromium-min": "^141.0.0",
     "adm-zip": "^0.5.16",
     "bcryptjs": "^3.0.2",
+    "canvas": "^3.2.0",
     "diff": "^8.0.2",
     "docx": "^9.5.1",
     "epub-gen": "^0.1.0",
