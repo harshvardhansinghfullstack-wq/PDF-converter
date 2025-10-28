@@ -1,9 +1,13 @@
+export const runtime = "nodejs"; // ✅ Ensure Node runtime (not Edge)
+
 import { NextRequest, NextResponse } from "next/server";
 import { tmpdir } from "os";
 import fs from "fs";
 import path from "path";
-import puppeteerCore from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
+
+// Dynamic imports (decide which puppeteer to use)
+let puppeteer: any;
+let chromium: any;
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
@@ -20,7 +24,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate files are PNG
+    // ✅ Validate PNG files
     for (const file of files) {
       if (!file.type.includes("png")) {
         return NextResponse.json(
@@ -30,7 +34,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Prepare HTML content
+    // ✅ Build HTML for images
     const imagesHtml = await Promise.all(
       files.map(async (file) => {
         const arrayBuffer = await file.arrayBuffer();
@@ -62,30 +66,46 @@ export async function POST(req: NextRequest) {
             }
           </style>
         </head>
-        <body>
-          ${imagesHtml.join("\n")}
-        </body>
+        <body>${imagesHtml.join("\n")}</body>
       </html>
     `;
 
-    // Generate PDF
     tempPdfPath = path.join(tmpdir(), `png-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.pdf`);
-    
-    // Launch browser with chromium
-    browser = await puppeteerCore.launch({
-      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
-    
+
+    // ✅ Detect local vs production
+    const isLocal = process.env.NODE_ENV === "development";
+
+    if (isLocal) {
+      // 🧩 Use full Puppeteer in local dev (includes Chromium)
+      const pkg = await import("puppeteer");
+      puppeteer = pkg.default;
+
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      });
+    } else {
+      // ☁️ Use puppeteer-core + @sparticuz/chromium in production
+      const chrom = await import("@sparticuz/chromium");
+      const core = await import("puppeteer-core");
+      chromium = chrom.default;
+      puppeteer = core.default;
+
+      const executablePath = await chromium.executablePath();
+
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath,
+        headless: chromium.headless,
+      });
+    }
+
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
-    await page.pdf({ path: tempPdfPath, format: "A4" });
+    await page.pdf({ path: tempPdfPath, format: "A4", printBackground: true });
 
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
-
-    // Get first file name for output filename
     const firstFileName = files[0].name.replace(/\.[^/.]+$/, "");
 
     return new NextResponse(pdfBuffer, {
@@ -93,11 +113,10 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${firstFileName}-converted.pdf"`,
-        "Content-Length": pdfBuffer.length.toString(),
       },
     });
   } catch (error: any) {
-    console.error("Error during PNG to PDF conversion:", error);
+    console.error("Error during PNG → PDF conversion:", error);
     return NextResponse.json(
       { error: `Conversion failed: ${error.message}` },
       { status: 500 }

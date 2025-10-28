@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { tmpdir } from "os";
-import puppeteerCore from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
+
+// Dynamic imports so they don’t conflict in edge/runtime
+let puppeteer: any;
+let chromium: any;
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
@@ -50,22 +52,42 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    tempPdfPath = path.join(tmpdir(), `jpgtopdf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.pdf`);
+    tempPdfPath = path.join(tmpdir(), `jpgtopdf-${Date.now()}.pdf`);
 
-    // Launch browser with chromium
-    browser = await puppeteerCore.launch({
-      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
+    // ✅ Detect environment: local or production
+    const isLocal = process.env.NODE_ENV === "development";
 
+    if (isLocal) {
+      // 🧩 Local mode — use normal Puppeteer with its bundled Chromium
+      const pkg = await import("puppeteer");
+      puppeteer = pkg.default;
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      });
+    } else {
+      // ☁️ Production mode — lightweight puppeteer-core + sparticuz/chromium
+      const chrom = await import("@sparticuz/chromium");
+      const core = await import("puppeteer-core");
+      chromium = chrom.default;
+      puppeteer = core.default;
+
+      const executablePath = await chromium.executablePath();
+
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath,
+        headless: chromium.headless,
+      });
+    }
+
+    // Generate PDF
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
     await page.pdf({ path: tempPdfPath, format: "A4", printBackground: true });
 
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
-
     const firstFileName = files[0].name.replace(/\.[^/.]+$/, "");
 
     return new NextResponse(pdfBuffer, {

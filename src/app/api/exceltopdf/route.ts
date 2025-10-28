@@ -8,17 +8,37 @@ export async function POST(req: NextRequest) {
   let tempPdfPath = "";
 
   try {
-    // 🧠 Dynamically import puppeteer when needed
     let puppeteer: any;
-    let chromium: any;
+    let launchOptions: any = {};
 
-    try {
-      chromium = await import("@sparticuz/chromium");
+    // ✅ Detect if we're running on Vercel / AWS Lambda
+    const isServerless =
+      !!process.env.AWS_LAMBDA_FUNCTION_VERSION ||
+      process.env.VERCEL === "1" ||
+      process.env.NOW_REGION;
+
+    if (isServerless) {
+      // 🧠 Use lightweight chromium build (for serverless)
+      const chromium = (await import("@sparticuz/chromium")).default;
       puppeteer = await import("puppeteer-core");
-    } catch {
+
+      launchOptions = {
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+      };
+    } else {
+      // 💻 Local dev — use full Puppeteer (includes Chrome)
       puppeteer = await import("puppeteer");
+
+      launchOptions = {
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      };
     }
 
+    // 🧾 Handle Excel upload
     const formData = await req.formData();
     const files = formData.getAll("files") as File[];
 
@@ -30,24 +50,21 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await excelFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // ✅ Read Excel
     const workbook = XLSX.read(buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as (string | number)[][];
 
-    // ✅ Convert to HTML
     const htmlTableRows = data
-      .map(
-        (row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`
-      )
+      .map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`)
       .join("");
 
     const html = `
       <html>
         <head>
           <style>
-            table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; }
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            table { border-collapse: collapse; width: 100%; }
             td, th { border: 1px solid #ddd; padding: 8px; }
             tr:nth-child(even) { background-color: #f2f2f2; }
             th { background-color: #4CAF50; color: white; }
@@ -60,25 +77,11 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    // ✅ Setup paths
     tempPdfPath = path.join(tmpdir(), `excel-${Date.now()}.pdf`);
 
-    // ✅ Launch Puppeteer
-    const browser = await puppeteer.launch(
-      chromium
-        ? {
-            args: chromium.args,
-            defaultViewport: chromium.defaultViewport,
-            executablePath: await chromium.executablePath(),
-            headless: chromium.headless,
-          }
-        : {
-            headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox"],
-          }
-    );
-
+    const browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
+
     await page.setContent(html, { waitUntil: "networkidle0" });
     await page.pdf({ path: tempPdfPath, format: "A4" });
     await browser.close();
@@ -104,7 +107,7 @@ export async function POST(req: NextRequest) {
         await fs.promises.unlink(tempPdfPath);
       }
     } catch (cleanupError) {
-      console.error("Error cleaning up temp file:", cleanupError);
+      console.error("Cleanup error:", cleanupError);
     }
   }
 }

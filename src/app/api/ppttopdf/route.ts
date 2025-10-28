@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
 import { tmpdir } from "os";
 import fs from "fs";
 import path from "path";
 import AdmZip from "adm-zip";
+
+// Only import dynamically to prevent conflict
+let puppeteer: any;
+let chromium: any;
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
@@ -25,7 +27,7 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await pptFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Extract text from PPTX XML
+    // Extract slide text
     const zip = new AdmZip(buffer);
     const slideFiles = zip
       .getEntries()
@@ -37,7 +39,6 @@ export async function POST(req: NextRequest) {
       .sort((a, b) => a.entryName.localeCompare(b.entryName, undefined, { numeric: true }));
 
     const slideTitles: string[] = [];
-
     for (const slide of slideFiles) {
       const xml = slide.getData().toString("utf8");
       const matches = xml.match(/<a:t>([^<]+)<\/a:t>/g);
@@ -79,15 +80,28 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    // Use @sparticuz/chromium + puppeteer-core
-    const executablePath = await chromium.executablePath();
+    // ✅ Determine environment
+    const isLocal = process.env.NODE_ENV === "development";
 
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath,
-      headless: chromium.headless,
-    });
+    if (isLocal) {
+      const pkg = await import("puppeteer");
+      puppeteer = pkg.default;
+    } else {
+      const chrom = await import("@sparticuz/chromium");
+      const core = await import("puppeteer-core");
+      chromium = chrom.default;
+      puppeteer = core.default;
+    }
+
+    // ✅ Launch browser
+    const browser = isLocal
+      ? await puppeteer.launch({ headless: true }) // full puppeteer includes chromium
+      : await puppeteer.launch({
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: await chromium.executablePath(),
+          headless: chromium.headless,
+        });
 
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
@@ -97,7 +111,6 @@ export async function POST(req: NextRequest) {
     await browser.close();
 
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
-
     return new NextResponse(pdfBuffer, {
       status: 200,
       headers: {
@@ -109,12 +122,8 @@ export async function POST(req: NextRequest) {
     console.error("Error during PowerPoint to PDF conversion:", error);
     return NextResponse.json({ error: `Conversion failed: ${error.message}` }, { status: 500 });
   } finally {
-    try {
-      if (tempPdfPath && fs.existsSync(tempPdfPath)) {
-        await fs.promises.unlink(tempPdfPath);
-      }
-    } catch (cleanupError) {
-      console.error("Error cleaning up PDF temp file:", cleanupError);
+    if (tempPdfPath && fs.existsSync(tempPdfPath)) {
+      await fs.promises.unlink(tempPdfPath);
     }
   }
 }

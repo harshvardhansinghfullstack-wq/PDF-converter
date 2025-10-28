@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
 
-export const runtime = "nodejs"; // needed because sharp uses native modules
+export const runtime = "nodejs"; // ✅ Required: sharp uses native bindings
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,21 +10,43 @@ export async function POST(req: NextRequest) {
     const files = formData.getAll("files") as File[];
 
     if (!files?.length) {
-      return NextResponse.json({ error: "No TIFF files uploaded" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No TIFF files uploaded" },
+        { status: 400 }
+      );
     }
 
     const mergedPdf = await PDFDocument.create();
 
     for (const file of files) {
-      if (!file.type.includes("tiff") && !file.name.toLowerCase().endsWith(".tiff")) {
-        return NextResponse.json({ error: "Only TIFF files are supported" }, { status: 400 });
+      const name = file.name.toLowerCase();
+
+      // ✅ Validate file type
+      if (!file.type.includes("tiff") && !name.endsWith(".tiff") && !name.endsWith(".tif")) {
+        return NextResponse.json(
+          { error: "Only TIFF (.tif / .tiff) files are supported" },
+          { status: 400 }
+        );
       }
 
       const arrayBuffer = await file.arrayBuffer();
-      const pngBuffer = await sharp(Buffer.from(arrayBuffer)).png().toBuffer();
-      const img = await mergedPdf.embedPng(pngBuffer);
-      const page = mergedPdf.addPage([img.width, img.height]);
-      page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+      const buffer = Buffer.from(arrayBuffer);
+
+      // 🧩 Handle multi-page TIFFs
+      const metadata = await sharp(buffer).metadata();
+      const pages = metadata.pages || 1;
+
+      for (let i = 0; i < pages; i++) {
+        const pngBuffer = await sharp(buffer, { page: i }).png().toBuffer();
+        const img = await mergedPdf.embedPng(pngBuffer);
+        const page = mergedPdf.addPage([img.width, img.height]);
+        page.drawImage(img, {
+          x: 0,
+          y: 0,
+          width: img.width,
+          height: img.height,
+        });
+      }
     }
 
     const pdfBytes = await mergedPdf.save();
@@ -37,7 +59,10 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("TIFF → PDF conversion error:", error);
-    return NextResponse.json({ error: `Conversion failed: ${error.message}` }, { status: 500 });
+    console.error("❌ TIFF → PDF conversion error:", error);
+    return NextResponse.json(
+      { error: `Conversion failed: ${error.message}` },
+      { status: 500 }
+    );
   }
 }

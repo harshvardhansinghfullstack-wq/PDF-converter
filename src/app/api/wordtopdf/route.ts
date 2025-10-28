@@ -1,14 +1,15 @@
-// src/app/api/wordtopdf/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
+import { tmpdir } from "os";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
-import fs from "fs";
-import { tmpdir } from "os";
-import path from "path";
-import { NextRequest, NextResponse } from "next/server";
 import mammoth from "mammoth";
 
+export const runtime = "nodejs"; // ✅ ensures Node.js runtime on Vercel
+
 export async function POST(req: NextRequest) {
-  let tempFilePath = "";
+  let tempDocxPath = "";
   let tempPdfPath = "";
 
   try {
@@ -16,38 +17,44 @@ export async function POST(req: NextRequest) {
     const files = formData.getAll("files") as File[];
 
     if (!files || files.length === 0) {
-      return new NextResponse(
-        JSON.stringify({ error: "No files provided" }),
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No files uploaded" }, { status: 400 });
     }
 
     const docxFile = files[0];
-    const arrayBuffer = await docxFile.arrayBuffer();
-    const docxBuffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(await docxFile.arrayBuffer());
+    tempDocxPath = path.join(tmpdir(), `input-${Date.now()}.docx`);
+    tempPdfPath = path.join(tmpdir(), `output-${Date.now()}.pdf`);
+    await fs.promises.writeFile(tempDocxPath, buffer);
 
-    tempFilePath = path.join(tmpdir(), `docx-${Date.now()}.docx`);
-    tempPdfPath = path.join(tmpdir(), `pdf-${Date.now()}.pdf`);
+    // Convert DOCX → HTML
+    const htmlResult = await mammoth.convertToHtml({ path: tempDocxPath });
+    const html = htmlResult.value;
 
-    await fs.promises.writeFile(tempFilePath, docxBuffer);
+    // ✅ Detect local vs deployed
+    const isLocal = process.env.NODE_ENV === "development";
 
-    const htmlContent = await mammoth.convertToHtml({ path: tempFilePath });
-    const html = htmlContent.value;
-
-    // ✅ FIX: Launch Puppeteer with portable Chromium for serverless environments
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath:
-        (await chromium.executablePath()) || "/usr/bin/chromium-browser",
-      headless: chromium.headless,
-    });
+    // ✅ Correct browser launch for both environments
+    const browser = await puppeteer.launch(
+      isLocal
+        ? {
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox"],
+            executablePath:
+              process.platform === "win32"
+                ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+                : "/usr/bin/google-chrome",
+          }
+        : {
+            args: chromium.args,
+            defaultViewport: chromium.defaultViewport,
+            executablePath: await chromium.executablePath(),
+            headless: chromium.headless,
+          }
+    );
 
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
-
     const pdfBuffer = await page.pdf({ format: "A4" });
-
     await browser.close();
 
     return new NextResponse(pdfBuffer, {
@@ -57,24 +64,22 @@ export async function POST(req: NextRequest) {
         "Content-Disposition": 'attachment; filename="converted.pdf"',
       },
     });
-  } catch (error: any) {
-    console.error("Error during DOCX to PDF conversion:", error);
-    return new NextResponse(
-      JSON.stringify({
-        error: `An error occurred during file upload or conversion: ${error.message}`,
-      }),
+  } catch (err: any) {
+    console.error("❌ DOCX→PDF conversion error:", err);
+    return NextResponse.json(
+      {
+        error: `Failed to convert DOCX to PDF: ${err.message}`,
+      },
       { status: 500 }
     );
   } finally {
     try {
-      if (tempFilePath && fs.existsSync(tempFilePath)) {
-        await fs.promises.unlink(tempFilePath);
-      }
-      if (tempPdfPath && fs.existsSync(tempPdfPath)) {
+      if (tempDocxPath && fs.existsSync(tempDocxPath))
+        await fs.promises.unlink(tempDocxPath);
+      if (tempPdfPath && fs.existsSync(tempPdfPath))
         await fs.promises.unlink(tempPdfPath);
-      }
-    } catch (cleanupError) {
-      console.error("Error during cleanup:", cleanupError);
+    } catch (cleanupErr) {
+      console.warn("⚠️ Cleanup error:", cleanupErr);
     }
   }
 }

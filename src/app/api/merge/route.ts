@@ -1,78 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
-import pdfParse from "pdf-parse";
-import { Document, Packer, Paragraph, TextRun } from "docx";
+import { PDFDocument } from "pdf-lib";
 
-export const runtime = "nodejs"; // ✅ ensures Node APIs (like Buffer) work in Next.js
+export const runtime = "nodejs"; // ensure Node.js environment
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const files = formData.getAll("files") as File[];
 
-    if (!files.length) {
-      return NextResponse.json({ error: "No files provided" }, { status: 400 });
-    }
-
-    const pdfFile = files[0]; // Assume single file upload
-
-    if (!pdfFile.type.includes("pdf")) {
+    if (!files || files.length < 2) {
       return NextResponse.json(
-        { error: "Only PDF files are supported." },
+        { error: "Please upload at least two PDF files to merge." },
         { status: 400 }
       );
     }
 
-    const arrayBuffer = await pdfFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    // ✅ Create a new empty PDF document
+    const mergedPdf = await PDFDocument.create();
 
-    // ✅ Parse PDF to text
-    let pdfData;
-    try {
-      pdfData = await pdfParse(buffer);
-    } catch (err: any) {
-      console.error("PDF parse error:", err);
-      return NextResponse.json(
-        { error: `Error parsing PDF: ${err.message || "Unknown error"}` },
-        { status: 400 }
-      );
+    for (const file of files) {
+      if (!file.type.includes("pdf")) continue;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await PDFDocument.load(arrayBuffer);
+      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+
+      copiedPages.forEach((page) => mergedPdf.addPage(page));
     }
 
-    const extractedText = pdfData.text.trim();
-    if (!extractedText) {
-      return NextResponse.json(
-        { error: "No readable text found in the PDF." },
-        { status: 400 }
-      );
-    }
+    // ✅ Serialize merged PDF
+    const mergedPdfBytes = await mergedPdf.save();
 
-    // ✅ Create DOCX document
-    const doc = new Document({
-      sections: [
-        {
-          children: extractedText.split("\n").map(
-            (line) =>
-              new Paragraph({
-                children: [new TextRun(line.trim())],
-              })
-          ),
-        },
-      ],
-    });
-
-    const docBuffer = await Packer.toBuffer(doc);
-
-    return new NextResponse(docBuffer, {
+    // ✅ Return as binary (not corrupted)
+    return new NextResponse(mergedPdfBytes, {
       status: 200,
       headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "Content-Disposition": 'attachment; filename="converted.docx"',
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'attachment; filename="merged.pdf"',
+        "Content-Length": mergedPdfBytes.length.toString(),
       },
     });
-  } catch (error: any) {
-    console.error("Error in PDF → DOCX conversion:", error);
+  } catch (err: any) {
+    console.error("Merge error:", err);
     return NextResponse.json(
-      { error: `Conversion failed: ${error.message || "Unknown error"}` },
+      { error: `Merge failed: ${err.message || "Unknown error"}` },
       { status: 500 }
     );
   }

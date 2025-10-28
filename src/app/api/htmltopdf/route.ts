@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { tmpdir } from "os";
-import puppeteerCore from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
+
+export const runtime = "nodejs"; // 👈 Required for Vercel/AWS
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
-  let browser = null;
+  let browser: any = null;
 
   try {
     const formData = await req.formData();
@@ -18,23 +18,38 @@ export async function POST(req: NextRequest) {
     }
 
     const htmlFile = files[0];
-
-    if (!htmlFile.type.includes("html") && !htmlFile.name.endsWith(".html")) {
-      return NextResponse.json({ error: "Only HTML files are supported" }, { status: 400 });
+    if (!htmlFile.name.endsWith(".html")) {
+      return NextResponse.json({ error: "Only .html files are supported" }, { status: 400 });
     }
 
     const arrayBuffer = await htmlFile.arrayBuffer();
     const htmlContent = new TextDecoder().decode(arrayBuffer);
 
-    tempPdfPath = path.join(tmpdir(), `html-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.pdf`);
+    tempPdfPath = path.join(tmpdir(), `html-${Date.now()}-${Math.random().toString(36).substring(2, 9)}.pdf`);
 
-    // Launch browser with chromium
-    browser = await puppeteerCore.launch({
-      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
+    // ✅ Use puppeteer locally, chromium in production
+    const isLocal = process.env.NODE_ENV === "development";
+    let puppeteer, chromium;
+
+    if (isLocal) {
+      const pkg = await import("puppeteer");
+      puppeteer = pkg.default;
+    } else {
+      const core = await import("puppeteer-core");
+      const chrom = await import("@sparticuz/chromium");
+      puppeteer = core.default;
+      chromium = chrom.default;
+    }
+
+    // ✅ Launch browser properly
+    browser = isLocal
+      ? await puppeteer.launch({ headless: true }) // puppeteer includes its own Chromium
+      : await puppeteer.launch({
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: await chromium.executablePath(),
+          headless: chromium.headless,
+        });
 
     const page = await browser.newPage();
     await page.setContent(htmlContent, { waitUntil: "networkidle0" });
@@ -47,15 +62,11 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${htmlFile.name.replace('.html', '.pdf')}"`,
-        "Content-Length": pdfBuffer.length.toString(),
       },
     });
   } catch (error: any) {
-    console.error("Error during HTML→PDF conversion:", error);
-    return NextResponse.json(
-      { error: `Conversion failed: ${error.message}` },
-      { status: 500 }
-    );
+    console.error("Error during HTML → PDF conversion:", error);
+    return NextResponse.json({ error: `Conversion failed: ${error.message}` }, { status: 500 });
   } finally {
     if (browser) {
       try {
@@ -64,12 +75,8 @@ export async function POST(req: NextRequest) {
         console.error("Error closing browser:", e);
       }
     }
-    try {
-      if (tempPdfPath && fs.existsSync(tempPdfPath)) {
-        await fs.promises.unlink(tempPdfPath);
-      }
-    } catch (cleanupError) {
-      console.error("Error cleaning up temp file:", cleanupError);
+    if (tempPdfPath && fs.existsSync(tempPdfPath)) {
+      await fs.promises.unlink(tempPdfPath);
     }
   }
 }

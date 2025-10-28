@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import pdfParse from "pdf-parse";
-import { tmpdir } from "os";
-import fs from "fs";
-import path from "path";
-import EPUB from "epub-gen";
+import JSZip from "jszip";
+import { create } from "xmlbuilder2";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  let tempPath = "";
-
   try {
     const formData = await req.formData();
     const files = formData.getAll("files") as File[];
@@ -26,10 +22,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Convert File → Buffer
     const arrayBuffer = await pdfFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Extract text from PDF
+    // Extract text
     const pdfData = await pdfParse(buffer);
     const plainText = pdfData.text?.trim();
 
@@ -40,73 +37,125 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Convert extracted text into EPUB chapters
+    // Split into logical chapters
     const chapters = plainText
-      .split(/\f+|\n\s*\n\s*\n+/g) // Split by form feed or multiple newlines
-      .filter((text) => text.trim().length > 50) // Filter out very short sections
-      .map((text, i) => ({
+      .split(/\f+|\n\s*\n\s*\n+/g)
+      .filter((t) => t.trim().length > 50)
+      .map((t, i) => ({
         title: `Chapter ${i + 1}`,
-        data: `<p>${text.trim().replace(/\n+/g, "</p><p>")}</p>`,
+        content: `<h2>Chapter ${i + 1}</h2><p>${t
+          .trim()
+          .replace(/\n+/g, "</p><p>")}</p>`,
       }));
 
-    if (chapters.length === 0) {
+    if (!chapters.length) {
       return NextResponse.json(
-        { error: "Could not extract meaningful content from PDF." },
+        { error: "Could not extract meaningful content." },
         { status: 400 }
       );
     }
 
-    // Generate unique temp path
-    tempPath = path.join(tmpdir(), `pdf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.epub`);
+    // --- Build EPUB structure manually using JSZip ---
+    const zip = new JSZip();
 
-    // Generate EPUB file
-    const epubOptions = {
-      title: pdfFile.name.replace(".pdf", "") || "Converted PDF",
-      author: "PDF Converter",
-      output: tempPath,
-      content: chapters,
-      version: 3,
-    };
+    // 1️⃣  mimetype file (must be first, no compression)
+    zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
 
-    // Create new EPUB and wait for completion
-    await new EPUB(epubOptions).promise;
+    // 2️⃣  META-INF/container.xml
+    zip.file(
+      "META-INF/container.xml",
+      `<?xml version="1.0"?>
+       <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+         <rootfiles>
+           <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+         </rootfiles>
+       </container>`
+    );
 
-    // Verify file exists before reading
-    if (!fs.existsSync(tempPath)) {
-      throw new Error("EPUB file generation failed - file not created");
-    }
+    // 3️⃣  Create content XHTML files
+    chapters.forEach((ch, i) => {
+      zip.file(
+        `OEBPS/chapter${i + 1}.xhtml`,
+        `<?xml version="1.0" encoding="utf-8"?>
+         <html xmlns="http://www.w3.org/1999/xhtml">
+         <head><title>${ch.title}</title></head>
+         <body>${ch.content}</body></html>`
+      );
+    });
 
-    const epubBuffer = await fs.promises.readFile(tempPath);
+    // 4️⃣  content.opf (manifest + spine)
+    const manifestItems = chapters
+      .map(
+        (ch, i) =>
+          `<item id="chap${i + 1}" href="chapter${i + 1}.xhtml" media-type="application/xhtml+xml"/>`
+      )
+      .join("\n");
 
-    // Verify buffer has content
-    if (epubBuffer.length === 0) {
-      throw new Error("Generated EPUB file is empty");
-    }
+    const spineItems = chapters
+      .map((_, i) => `<itemref idref="chap${i + 1}"/>`)
+      .join("\n");
+
+    zip.file(
+      "OEBPS/content.opf",
+      `<?xml version="1.0" encoding="UTF-8"?>
+       <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+         <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+           <dc:title>${pdfFile.name.replace(".pdf", "")}</dc:title>
+           <dc:language>en</dc:language>
+           <dc:identifier id="BookId">urn:uuid:${crypto.randomUUID()}</dc:identifier>
+         </metadata>
+         <manifest>
+           ${manifestItems}
+         </manifest>
+         <spine>
+           ${spineItems}
+         </spine>
+       </package>`
+    );
+
+    // 5️⃣  toc.ncx (navigation)
+    const ncxNavPoints = chapters
+      .map(
+        (ch, i) => `
+        <navPoint id="navPoint-${i + 1}" playOrder="${i + 1}">
+          <navLabel><text>${ch.title}</text></navLabel>
+          <content src="chapter${i + 1}.xhtml"/>
+        </navPoint>`
+      )
+      .join("\n");
+
+    zip.file(
+      "OEBPS/toc.ncx",
+      `<?xml version="1.0" encoding="UTF-8"?>
+       <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN"
+        "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
+       <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+         <head><meta name="dtb:uid" content="${crypto.randomUUID()}"/></head>
+         <docTitle><text>${pdfFile.name.replace(".pdf", "")}</text></docTitle>
+         <navMap>${ncxNavPoints}</navMap>
+       </ncx>`
+    );
+
+    // Generate EPUB as buffer
+    const epubBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
     return new NextResponse(epubBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/epub+zip",
-        "Content-Disposition": `attachment; filename="${pdfFile.name.replace(".pdf", ".epub")}"`,
-        "Content-Length": epubBuffer.length.toString(),
+        "Content-Disposition": `attachment; filename="${pdfFile.name.replace(
+          /\.pdf$/i,
+          ".epub"
+        )}"`,
       },
     });
-  } catch (error: any) {
-    console.error("EPUB conversion failed:", error);
+  } catch (err: any) {
+    console.error("EPUB conversion failed:", err);
     return NextResponse.json(
       {
-        error: `EPUB conversion failed: ${error.message || "Unknown error"}`,
+        error: `EPUB conversion failed: ${err.message || "Unknown error"}`,
       },
       { status: 500 }
     );
-  } finally {
-    // Cleanup temp file
-    try {
-      if (tempPath && fs.existsSync(tempPath)) {
-        await fs.promises.unlink(tempPath);
-      }
-    } catch (cleanupError) {
-      console.error("Cleanup failed:", cleanupError);
-    }
   }
 }
