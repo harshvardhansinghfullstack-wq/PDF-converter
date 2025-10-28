@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { tmpdir } from "os";
 import fs from "fs";
 import path from "path";
-import puppeteer from "puppeteer";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
+  let browser = null;
 
   try {
     const formData = await req.formData();
@@ -28,12 +30,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Prepare HTML content with each PNG as an <img> inside a div with page-break
+    // Prepare HTML content
     const imagesHtml = await Promise.all(
       files.map(async (file) => {
         const arrayBuffer = await file.arrayBuffer();
         const base64 = Buffer.from(arrayBuffer).toString("base64");
-        const mimeType = file.type; // should be image/png
+        const mimeType = file.type;
         return `<div style="page-break-after: always; text-align:center; margin-top: 2rem;">
                   <img src="data:${mimeType};base64,${base64}" style="max-width: 100%; height: auto;" />
                 </div>`;
@@ -66,16 +68,19 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    // Generate PDF
+    // Generate PDF with chromium
     tempPdfPath = path.join(tmpdir(), `png-${Date.now()}.pdf`);
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
     });
+    
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
     await page.pdf({ path: tempPdfPath, format: "A4" });
-    await browser.close();
 
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
 
@@ -93,6 +98,9 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   } finally {
+    if (browser) {
+      await browser.close();
+    }
     try {
       if (tempPdfPath && fs.existsSync(tempPdfPath)) {
         await fs.promises.unlink(tempPdfPath);
