@@ -2,22 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { tmpdir } from "os";
-
-let chromium: any;
-let puppeteer: any;
-
-try {
-  // 🟢 Load optimized Chromium for serverless environments
-  const chromiumImport = await import("@sparticuz/chromium");
-  chromium = chromiumImport.default || chromiumImport;
-  puppeteer = (await import("puppeteer-core")).default;
-} catch {
-  // 🟡 Fallback for local dev
-  puppeteer = (await import("puppeteer")).default;
-}
+import puppeteerCore from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
+  let browser = null;
 
   try {
     const formData = await req.formData();
@@ -27,14 +17,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No JPG file uploaded" }, { status: 400 });
     }
 
-    // ✅ Validate all files are JPEG
+    // Validate all files are JPEG
     for (const file of files) {
-      if (!file.type.startsWith("image/jpeg")) {
+      if (!file.type.includes("jpeg") && !file.type.includes("jpg")) {
         return NextResponse.json({ error: "Only JPG files are supported" }, { status: 400 });
       }
     }
 
-    // ✅ Convert uploaded files to base64 <img> elements
+    // Convert uploaded files to base64 <img> elements
     const imagesHtml = await Promise.all(
       files.map(async (file) => {
         const arrayBuffer = await file.arrayBuffer();
@@ -60,35 +50,30 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    tempPdfPath = path.join(tmpdir(), `jpgtopdf-${Date.now()}.pdf`);
+    tempPdfPath = path.join(tmpdir(), `jpgtopdf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.pdf`);
 
-    // 🧠 Launch Puppeteer correctly for both local & production
-    const browser = await puppeteer.launch(
-      chromium && chromium.executablePath
-        ? {
-            args: chromium.args,
-            defaultViewport: chromium.defaultViewport,
-            executablePath: await chromium.executablePath(),
-            headless: chromium.headless,
-          }
-        : {
-            headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox"],
-          }
-    );
+    // Launch browser with chromium
+    browser = await puppeteerCore.launch({
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+    });
 
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
     await page.pdf({ path: tempPdfPath, format: "A4", printBackground: true });
-    await browser.close();
 
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
+
+    const firstFileName = files[0].name.replace(/\.[^/.]+$/, "");
 
     return new NextResponse(pdfBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": 'attachment; filename="converted.pdf"',
+        "Content-Disposition": `attachment; filename="${firstFileName}-converted.pdf"`,
+        "Content-Length": pdfBuffer.length.toString(),
       },
     });
   } catch (error: any) {
@@ -98,6 +83,13 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error("Error closing browser:", e);
+      }
+    }
     try {
       if (tempPdfPath && fs.existsSync(tempPdfPath)) {
         await fs.promises.unlink(tempPdfPath);
