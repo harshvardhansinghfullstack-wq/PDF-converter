@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
     const files = formData.getAll("files") as File[];
 
     if (!files || files.length === 0) {
-      return new NextResponse(
-        JSON.stringify({ error: "No PNG file uploaded" }),
+      return NextResponse.json(
+        { error: "No PNG file uploaded" },
         { status: 400 }
       );
     }
@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
     // Validate files are PNG
     for (const file of files) {
       if (!file.type.includes("png")) {
-        return new NextResponse(
-          JSON.stringify({ error: "Only PNG files are supported" }),
+        return NextResponse.json(
+          { error: "Only PNG files are supported" },
           { status: 400 }
         );
       }
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     `;
 
     // Generate PDF
-    tempPdfPath = path.join(tmpdir(), `png-${Date.now()}.pdf`);
+    tempPdfPath = path.join(tmpdir(), `png-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.pdf`);
     
     // Launch browser with chromium
     browser = await puppeteerCore.launch({
@@ -85,17 +85,21 @@ export async function POST(req: NextRequest) {
 
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
 
+    // Get first file name for output filename
+    const firstFileName = files[0].name.replace(/\.[^/.]+$/, "");
+
     return new NextResponse(pdfBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": 'attachment; filename="converted.pdf"',
+        "Content-Disposition": `attachment; filename="${firstFileName}-converted.pdf"`,
+        "Content-Length": pdfBuffer.length.toString(),
       },
     });
   } catch (error: any) {
     console.error("Error during PNG to PDF conversion:", error);
-    return new NextResponse(
-      JSON.stringify({ error: `Conversion failed: ${error.message}` }),
+    return NextResponse.json(
+      { error: `Conversion failed: ${error.message}` },
       { status: 500 }
     );
   } finally {

@@ -5,10 +5,10 @@ import fs from "fs";
 import path from "path";
 import EPUB from "epub-gen";
 
-export const runtime = "nodejs"; // ✅ Ensure Node.js APIs like fs and path are available
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const tempPath = path.join(tmpdir(), `pdf-${Date.now()}.epub`);
+  let tempPath = "";
 
   try {
     const formData = await req.formData();
@@ -20,59 +20,89 @@ export async function POST(req: NextRequest) {
 
     const pdfFile = files[0];
     if (!pdfFile.type.includes("pdf")) {
-      return NextResponse.json({ error: "Only PDF files are supported." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Only PDF files are supported." },
+        { status: 400 }
+      );
     }
 
     const arrayBuffer = await pdfFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // ✅ Extract text safely
+    // Extract text from PDF
     const pdfData = await pdfParse(buffer);
     const plainText = pdfData.text?.trim();
 
     if (!plainText) {
-      throw new Error("No extractable text in PDF.");
+      return NextResponse.json(
+        { error: "No extractable text found in PDF." },
+        { status: 400 }
+      );
     }
 
-    // ✅ Convert extracted text into EPUB chapters
+    // Convert extracted text into EPUB chapters
     const chapters = plainText
-      .split(/\f|\n\s*\n/g) // split by form feed or double newlines
-      .filter((text) => text.trim().length > 0)
+      .split(/\f+|\n\s*\n\s*\n+/g) // Split by form feed or multiple newlines
+      .filter((text) => text.trim().length > 50) // Filter out very short sections
       .map((text, i) => ({
-        title: `Section ${i + 1}`,
-        data: `<p>${text.replace(/\n/g, "<br/>")}</p>`,
+        title: `Chapter ${i + 1}`,
+        data: `<p>${text.trim().replace(/\n+/g, "</p><p>")}</p>`,
       }));
 
-    // ✅ Generate EPUB file
+    if (chapters.length === 0) {
+      return NextResponse.json(
+        { error: "Could not extract meaningful content from PDF." },
+        { status: 400 }
+      );
+    }
+
+    // Generate unique temp path
+    tempPath = path.join(tmpdir(), `pdf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.epub`);
+
+    // Generate EPUB file
     const epubOptions = {
-      title: "Converted PDF",
-      author: "PDF2EPUB",
+      title: pdfFile.name.replace(".pdf", "") || "Converted PDF",
+      author: "PDF Converter",
       output: tempPath,
       content: chapters,
+      version: 3,
     };
 
-    const generator = new EPUB(epubOptions);
-    await generator.promise; // Wait for file generation
+    // Create new EPUB and wait for completion
+    await new EPUB(epubOptions).promise;
+
+    // Verify file exists before reading
+    if (!fs.existsSync(tempPath)) {
+      throw new Error("EPUB file generation failed - file not created");
+    }
 
     const epubBuffer = await fs.promises.readFile(tempPath);
+
+    // Verify buffer has content
+    if (epubBuffer.length === 0) {
+      throw new Error("Generated EPUB file is empty");
+    }
 
     return new NextResponse(epubBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/epub+zip",
-        "Content-Disposition": 'attachment; filename="converted.epub"',
+        "Content-Disposition": `attachment; filename="${pdfFile.name.replace(".pdf", ".epub")}"`,
+        "Content-Length": epubBuffer.length.toString(),
       },
     });
   } catch (error: any) {
     console.error("EPUB conversion failed:", error);
     return NextResponse.json(
-      { error: `EPUB conversion failed: ${error.message || "Unknown error"}` },
+      {
+        error: `EPUB conversion failed: ${error.message || "Unknown error"}`,
+      },
       { status: 500 }
     );
   } finally {
-    // ✅ Cleanup temp file
+    // Cleanup temp file
     try {
-      if (fs.existsSync(tempPath)) {
+      if (tempPath && fs.existsSync(tempPath)) {
         await fs.promises.unlink(tempPath);
       }
     } catch (cleanupError) {

@@ -8,20 +8,35 @@ export async function POST(req: NextRequest) {
     const files = formData.getAll("files") as File[];
 
     if (!files || files.length === 0) {
-      return new NextResponse(
-        JSON.stringify({ error: "No PDF file uploaded" }),
+      return NextResponse.json(
+        { error: "No PDF file uploaded" },
         { status: 400 }
       );
     }
 
     const pdfFile = files[0];
+
+    if (!pdfFile.type.includes("pdf")) {
+      return NextResponse.json(
+        { error: "Only PDF files are supported" },
+        { status: 400 }
+      );
+    }
+
     const arrayBuffer = await pdfFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
     const parsed = await pdfParse(buffer);
-    const text = parsed.text;
+    const text = parsed.text?.trim();
 
-    // 🧠 Split text into rows & columns
+    if (!text) {
+      return NextResponse.json(
+        { error: "No text found in PDF" },
+        { status: 400 }
+      );
+    }
+
+    // Split text into rows & columns
     const rows = text
       .split("\n")
       .map((line) =>
@@ -33,18 +48,18 @@ export async function POST(req: NextRequest) {
       .filter((row) => row.length > 0);
 
     if (rows.length === 0) {
-      return new NextResponse(
-        JSON.stringify({ error: "No table data found in PDF" }),
+      return NextResponse.json(
+        { error: "No table data found in PDF" },
         { status: 400 }
       );
     }
 
-    // 🧾 Build Excel workbook
+    // Build Excel workbook
     const worksheet = XLSX.utils.aoa_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
 
-    // ✅ Generate Excel buffer in memory
+    // Generate Excel buffer in memory
     const excelBuffer = XLSX.write(workbook, {
       type: "buffer",
       bookType: "xlsx",
@@ -55,13 +70,14 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": 'attachment; filename="converted.xlsx"',
+        "Content-Disposition": `attachment; filename="${pdfFile.name.replace(".pdf", ".xlsx")}"`,
+        "Content-Length": excelBuffer.length.toString(),
       },
     });
   } catch (error: any) {
     console.error("Error during PDF to Excel conversion:", error);
-    return new NextResponse(
-      JSON.stringify({ error: `Conversion failed: ${error.message}` }),
+    return NextResponse.json(
+      { error: `Conversion failed: ${error.message}` },
       { status: 500 }
     );
   }
