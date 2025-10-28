@@ -1,69 +1,61 @@
-import { NextRequest, NextResponse } from 'next/server';
-import puppeteer from 'puppeteer';
-import { PDFDocument } from 'pdf-lib';
-import PptxGenJS from 'pptxgenjs';
-import fs from 'fs/promises';
-import { tmpdir } from 'os';
-import path from 'path';
+import { NextRequest, NextResponse } from "next/server";
+import pdfParse from "pdf-parse";
+import PptxGenJS from "pptxgenjs";
 
 export async function POST(req: NextRequest) {
-  let tempPdfPath = '';
-
   try {
     const formData = await req.formData();
-    const files = formData.getAll('files') as File[];
+    const files = formData.getAll("files") as File[];
 
     if (!files || files.length === 0) {
-      return NextResponse.json({ error: 'No PDF file uploaded' }, { status: 400 });
+      return NextResponse.json({ error: "No PDF uploaded" }, { status: 400 });
     }
 
     const pdfFile = files[0];
-    const arrayBuffer = await pdfFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(await pdfFile.arrayBuffer());
 
-    const pdfDoc = await PDFDocument.load(buffer);
-    const totalPages = pdfDoc.getPageCount();
+    // Extract text from PDF
+    const pdfData = await pdfParse(buffer);
+    const text = pdfData.text.trim();
 
-    tempPdfPath = path.join(tmpdir(), `upload-${Date.now()}.pdf`);
-    await fs.writeFile(tempPdfPath, buffer);
-
-    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
-
-    const pptx = new PptxGenJS();
-    pptx.layout = 'LAYOUT_WIDE';
-    const slideWidth = (pptx as any).width;
-    const slideHeight = (pptx as any).height;
-
-    for (let i = 1; i <= totalPages; i++) {
-      const page = await browser.newPage();
-      await page.goto(`file://${tempPdfPath}#page=${i}`, { waitUntil: 'networkidle0' });
-      const screenshot = await page.screenshot({ type: 'jpeg', quality: 80 }) as Buffer;
-      const slide = pptx.addSlide();
-      slide.addImage({
-        data: screenshot.toString('base64'),
-        x: 0,
-        y: 0,
-        w: slideWidth,
-        h: slideHeight,
-      });
-      await page.close();
+    if (!text) {
+      return NextResponse.json({ error: "No text found in PDF" }, { status: 400 });
     }
 
-    await browser.close();
-    await fs.unlink(tempPdfPath);
+    // Create PPTX
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE";
 
-    // ✅ Use 'nodebuffer' with type cast
-    const pptxBuffer = await (pptx.write as any)('nodebuffer');
+    const lines = text.split("\n").filter((l) => l.trim().length > 0);
+    const chunkSize = 10; // Lines per slide
+    for (let i = 0; i < lines.length; i += chunkSize) {
+      const slide = pptx.addSlide();
+      const content = lines.slice(i, i + chunkSize).join("\n");
+      slide.addText(content, {
+        x: 0.5,
+        y: 0.5,
+        w: 9,
+        h: 5,
+        fontSize: 18,
+        color: "000000",
+        bold: false,
+      });
+    }
+
+    const pptxBuffer = await (pptx.write as any)("nodebuffer");
 
     return new NextResponse(pptxBuffer, {
       status: 200,
       headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'Content-Disposition': 'attachment; filename="converted.pptx"',
+        "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "Content-Disposition": 'attachment; filename="converted.pptx"',
       },
     });
-  } catch (error: any) {
-    console.error('Error during PDF to PPT conversion:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (err: any) {
+    console.error("PDF to PPTX error:", err);
+    return NextResponse.json(
+      { error: err.message || "Conversion failed" },
+      { status: 500 }
+    );
   }
 }

@@ -1,42 +1,53 @@
-import { NextRequest, NextResponse } from 'next/server';
-import puppeteer from 'puppeteer';
-import { tmpdir } from 'os';
-import fs from 'fs';
-import path from 'path';
+import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
+import { tmpdir } from "os";
+
+let chromium: any;
+let puppeteer: any;
+
+try {
+  // 🟢 Use optimized Chromium for serverless environments (Vercel, AWS, etc.)
+  chromium = await import("@sparticuz/chromium");
+  puppeteer = await import("puppeteer-core");
+} catch {
+  // 🟡 Fallback for local dev
+  puppeteer = await import("puppeteer");
+}
 
 export async function POST(req: NextRequest) {
-  let tempPdfPath = '';
+  let tempPdfPath = "";
 
   try {
     const formData = await req.formData();
-    const files = formData.getAll('files') as File[];
+    const files = formData.getAll("files") as File[];
 
     if (!files || files.length === 0) {
-      return new NextResponse(
-        JSON.stringify({ error: 'No JPG file uploaded' }),
-        { status: 400 }
-      );
+      return new NextResponse(JSON.stringify({ error: "No JPG file uploaded" }), {
+        status: 400,
+      });
     }
 
-    // Validate file types
+    // ✅ Validate all files are JPEG
     for (const file of files) {
-      if (!file.type.startsWith('image/jpeg')) {
+      if (!file.type.startsWith("image/jpeg")) {
         return new NextResponse(
-          JSON.stringify({ error: 'Only JPG files are supported' }),
+          JSON.stringify({ error: "Only JPG files are supported" }),
           { status: 400 }
         );
       }
     }
 
-    // Convert uploaded files to base64 data URLs to embed in HTML
+    // ✅ Convert uploaded files to base64 <img> elements
     const imagesHtml = await Promise.all(
-      files.map(async (file, i) => {
+      files.map(async (file) => {
         const arrayBuffer = await file.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
-        // Use CSS to fit image nicely on PDF page
-        return `<div style="page-break-after: always; text-align: center;">
-                  <img src="data:image/jpeg;base64,${base64}" style="max-width: 100%; max-height: 100vh;" />
-                </div>`;
+        const base64 = Buffer.from(arrayBuffer).toString("base64");
+        return `
+          <div style="page-break-after: always; text-align: center;">
+            <img src="data:image/jpeg;base64,${base64}"
+                 style="max-width: 100%; max-height: 100vh; display: block; margin: auto;" />
+          </div>`;
       })
     );
 
@@ -49,22 +60,30 @@ export async function POST(req: NextRequest) {
             img { display: block; margin: auto; }
           </style>
         </head>
-        <body>
-          ${imagesHtml.join('')}
-        </body>
+        <body>${imagesHtml.join("")}</body>
       </html>
     `;
 
     tempPdfPath = path.join(tmpdir(), `jpgtopdf-${Date.now()}.pdf`);
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    // 🧠 Auto-detect environment and launch properly
+    const browser = await puppeteer.launch(
+      chromium
+        ? {
+            args: chromium.args,
+            defaultViewport: chromium.defaultViewport,
+            executablePath: await chromium.executablePath(),
+            headless: chromium.headless,
+          }
+        : {
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox"],
+          }
+    );
 
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    await page.pdf({ path: tempPdfPath, format: 'A4', printBackground: true });
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.pdf({ path: tempPdfPath, format: "A4", printBackground: true });
     await browser.close();
 
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
@@ -72,14 +91,16 @@ export async function POST(req: NextRequest) {
     return new NextResponse(pdfBuffer, {
       status: 200,
       headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="converted.pdf"',
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'attachment; filename="converted.pdf"',
       },
     });
   } catch (error: any) {
-    console.error('Error during JPG to PDF conversion:', error);
+    console.error("Error during JPG → PDF conversion:", error);
     return new NextResponse(
-      JSON.stringify({ error: `Conversion failed: ${error.message}` }),
+      JSON.stringify({
+        error: `Conversion failed: ${error.message}`,
+      }),
       { status: 500 }
     );
   } finally {
@@ -88,7 +109,7 @@ export async function POST(req: NextRequest) {
         await fs.promises.unlink(tempPdfPath);
       }
     } catch (cleanupError) {
-      console.error('Error cleaning up temp PDF file:', cleanupError);
+      console.error("Error cleaning up temp PDF file:", cleanupError);
     }
   }
 }
