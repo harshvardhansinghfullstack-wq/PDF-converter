@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { tmpdir } from "os";
 import fs from "fs";
 import path from "path";
+import puppeteerCore from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
@@ -68,11 +68,12 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    // Generate PDF with chromium
+    // Generate PDF
     tempPdfPath = path.join(tmpdir(), `png-${Date.now()}.pdf`);
     
-    browser = await puppeteer.launch({
-      args: chromium.args,
+    // Launch browser with chromium
+    browser = await puppeteerCore.launch({
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
@@ -99,7 +100,11 @@ export async function POST(req: NextRequest) {
     );
   } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error("Error closing browser:", e);
+      }
     }
     try {
       if (tempPdfPath && fs.existsSync(tempPdfPath)) {
