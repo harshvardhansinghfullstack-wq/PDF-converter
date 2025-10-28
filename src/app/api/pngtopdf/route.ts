@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { tmpdir } from "os";
 import fs from "fs";
 import path from "path";
-import puppeteer from "puppeteer";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
@@ -12,30 +13,27 @@ export async function POST(req: NextRequest) {
     const files = formData.getAll("files") as File[];
 
     if (!files || files.length === 0) {
-      return new NextResponse(
-        JSON.stringify({ error: "No PNG file uploaded" }),
-        { status: 400 }
-      );
+      return new NextResponse(JSON.stringify({ error: "No PNG file uploaded" }), {
+        status: 400,
+      });
     }
 
-    // Validate files are PNG
+    // Validate all files are PNG
     for (const file of files) {
       if (!file.type.includes("png")) {
-        return new NextResponse(
-          JSON.stringify({ error: "Only PNG files are supported" }),
-          { status: 400 }
-        );
+        return new NextResponse(JSON.stringify({ error: "Only PNG files are supported" }), {
+          status: 400,
+        });
       }
     }
 
-    // Prepare HTML content with each PNG as an <img> inside a div with page-break
+    // Convert each image to base64 and wrap in HTML
     const imagesHtml = await Promise.all(
       files.map(async (file) => {
         const arrayBuffer = await file.arrayBuffer();
         const base64 = Buffer.from(arrayBuffer).toString("base64");
-        const mimeType = file.type; // should be image/png
         return `<div style="page-break-after: always; text-align:center; margin-top: 2rem;">
-                  <img src="data:${mimeType};base64,${base64}" style="max-width: 100%; height: auto;" />
+                  <img src="data:${file.type};base64,${base64}" style="max-width:100%; height:auto;" />
                 </div>`;
       })
     );
@@ -66,14 +64,20 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    // Generate PDF
-    tempPdfPath = path.join(tmpdir(), `png-${Date.now()}.pdf`);
+    // ✅ Use @sparticuz/chromium for cross-env Chrome binary
+    const executablePath = await chromium.executablePath();
+
     const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
     });
+
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
+
+    tempPdfPath = path.join(tmpdir(), `png-${Date.now()}.pdf`);
     await page.pdf({ path: tempPdfPath, format: "A4" });
     await browser.close();
 

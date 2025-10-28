@@ -7,12 +7,13 @@ let chromium: any;
 let puppeteer: any;
 
 try {
-  // 🟢 Use optimized Chromium for serverless environments (Vercel, AWS, etc.)
-  chromium = await import("@sparticuz/chromium");
-  puppeteer = await import("puppeteer-core");
+  // 🟢 Load optimized Chromium for serverless environments
+  const chromiumImport = await import("@sparticuz/chromium");
+  chromium = chromiumImport.default || chromiumImport;
+  puppeteer = (await import("puppeteer-core")).default;
 } catch {
   // 🟡 Fallback for local dev
-  puppeteer = await import("puppeteer");
+  puppeteer = (await import("puppeteer")).default;
 }
 
 export async function POST(req: NextRequest) {
@@ -23,18 +24,13 @@ export async function POST(req: NextRequest) {
     const files = formData.getAll("files") as File[];
 
     if (!files || files.length === 0) {
-      return new NextResponse(JSON.stringify({ error: "No JPG file uploaded" }), {
-        status: 400,
-      });
+      return NextResponse.json({ error: "No JPG file uploaded" }, { status: 400 });
     }
 
     // ✅ Validate all files are JPEG
     for (const file of files) {
       if (!file.type.startsWith("image/jpeg")) {
-        return new NextResponse(
-          JSON.stringify({ error: "Only JPG files are supported" }),
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Only JPG files are supported" }, { status: 400 });
       }
     }
 
@@ -66,9 +62,9 @@ export async function POST(req: NextRequest) {
 
     tempPdfPath = path.join(tmpdir(), `jpgtopdf-${Date.now()}.pdf`);
 
-    // 🧠 Auto-detect environment and launch properly
+    // 🧠 Launch Puppeteer correctly for both local & production
     const browser = await puppeteer.launch(
-      chromium
+      chromium && chromium.executablePath
         ? {
             args: chromium.args,
             defaultViewport: chromium.defaultViewport,
@@ -97,10 +93,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error during JPG → PDF conversion:", error);
-    return new NextResponse(
-      JSON.stringify({
-        error: `Conversion failed: ${error.message}`,
-      }),
+    return NextResponse.json(
+      { error: `Conversion failed: ${error.message}` },
       { status: 500 }
     );
   } finally {

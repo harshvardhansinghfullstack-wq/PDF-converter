@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 import { tmpdir } from "os";
 import fs from "fs";
 import path from "path";
 import AdmZip from "adm-zip";
-import puppeteer from "puppeteer";
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await pptFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Read PPTX ZIP structure
+    // Extract text from PPTX XML
     const zip = new AdmZip(buffer);
     const slideFiles = zip
       .getEntries()
@@ -78,14 +79,20 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    // Generate PDF
-    tempPdfPath = path.join(tmpdir(), `ppt-${Date.now()}.pdf`);
+    // Use @sparticuz/chromium + puppeteer-core
+    const executablePath = await chromium.executablePath();
+
     const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
     });
+
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
+
+    tempPdfPath = path.join(tmpdir(), `ppt-${Date.now()}.pdf`);
     await page.pdf({ path: tempPdfPath, format: "A4" });
     await browser.close();
 
@@ -112,7 +119,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Prevent HTML injection
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")

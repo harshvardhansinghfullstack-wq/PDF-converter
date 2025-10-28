@@ -4,22 +4,21 @@ import fs from "fs";
 import path from "path";
 import { tmpdir } from "os";
 
-let chromium: any;
-let puppeteer: any;
-
-try {
-  // 🟢 For Vercel / AWS Lambda
-  chromium = await import("@sparticuz/chromium");
-  puppeteer = await import("puppeteer-core");
-} catch {
-  // 🟡 Fallback for local dev
-  puppeteer = await import("puppeteer");
-}
-
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
 
   try {
+    // 🧠 Dynamically import puppeteer when needed
+    let puppeteer: any;
+    let chromium: any;
+
+    try {
+      chromium = await import("@sparticuz/chromium");
+      puppeteer = await import("puppeteer-core");
+    } catch {
+      puppeteer = await import("puppeteer");
+    }
+
     const formData = await req.formData();
     const files = formData.getAll("files") as File[];
 
@@ -40,8 +39,7 @@ export async function POST(req: NextRequest) {
     // ✅ Convert to HTML
     const htmlTableRows = data
       .map(
-        (row) =>
-          `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`
+        (row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`
       )
       .join("");
 
@@ -65,7 +63,7 @@ export async function POST(req: NextRequest) {
     // ✅ Setup paths
     tempPdfPath = path.join(tmpdir(), `excel-${Date.now()}.pdf`);
 
-    // ✅ Launch Puppeteer (auto detects environment)
+    // ✅ Launch Puppeteer
     const browser = await puppeteer.launch(
       chromium
         ? {
@@ -85,7 +83,6 @@ export async function POST(req: NextRequest) {
     await page.pdf({ path: tempPdfPath, format: "A4" });
     await browser.close();
 
-    // ✅ Send back PDF
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
 
     return new NextResponse(pdfBuffer, {
@@ -98,9 +95,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("Excel→PDF error:", error);
     return new NextResponse(
-      JSON.stringify({
-        error: `Conversion failed: ${error.message}`,
-      }),
+      JSON.stringify({ error: `Conversion failed: ${error.message}` }),
       { status: 500 }
     );
   } finally {
