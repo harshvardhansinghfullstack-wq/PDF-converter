@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { tmpdir } from "os";
 import fs from "fs";
 import path from "path";
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
+import { tmpdir } from "os";
+
+let puppeteer: any;
+let chromium: any;
+
+// ✅ Load correct puppeteer version depending on environment
+try {
+  chromium = await import("@sparticuz/chromium");
+  puppeteer = await import("puppeteer-core");
+} catch {
+  puppeteer = await import("puppeteer");
+}
 
 export async function POST(req: NextRequest) {
   let tempPdfPath = "";
@@ -13,28 +22,25 @@ export async function POST(req: NextRequest) {
     const files = formData.getAll("files") as File[];
 
     if (!files || files.length === 0) {
-      return new NextResponse(JSON.stringify({ error: "No PNG file uploaded" }), {
-        status: 400,
-      });
+      return NextResponse.json({ error: "No PNG files uploaded" }, { status: 400 });
     }
 
-    // Validate all files are PNG
+    // ✅ Validate PNG files
     for (const file of files) {
       if (!file.type.includes("png")) {
-        return new NextResponse(JSON.stringify({ error: "Only PNG files are supported" }), {
-          status: 400,
-        });
+        return NextResponse.json({ error: "Only PNG files are supported" }, { status: 400 });
       }
     }
 
-    // Convert each image to base64 and wrap in HTML
+    // ✅ Create HTML content with all PNGs
     const imagesHtml = await Promise.all(
       files.map(async (file) => {
         const arrayBuffer = await file.arrayBuffer();
         const base64 = Buffer.from(arrayBuffer).toString("base64");
-        return `<div style="page-break-after: always; text-align:center; margin-top: 2rem;">
-                  <img src="data:${file.type};base64,${base64}" style="max-width:100%; height:auto;" />
-                </div>`;
+        return `
+          <div style="page-break-after: always; text-align:center; margin: 2rem 0;">
+            <img src="data:${file.type};base64,${base64}" style="max-width:100%; height:auto;" />
+          </div>`;
       })
     );
 
@@ -42,43 +48,40 @@ export async function POST(req: NextRequest) {
       <html>
         <head>
           <style>
-            @media print {
-              div { page-break-after: always; }
-            }
-            body {
-              margin: 1rem;
-              font-family: Arial, sans-serif;
-              text-align: center;
-            }
-            img {
-              max-width: 100%;
-              height: auto;
-              margin: auto;
-              display: block;
-            }
+            body { margin: 0; padding: 0; text-align: center; }
+            img { max-width: 100%; height: auto; display: block; margin: auto; }
           </style>
         </head>
-        <body>
-          ${imagesHtml.join("\n")}
-        </body>
+        <body>${imagesHtml.join("\n")}</body>
       </html>
     `;
 
-    // ✅ Use @sparticuz/chromium for cross-env Chrome binary
-    const executablePath = await chromium.executablePath();
+    // ✅ Auto-detect environment
+    const isLocal = !process.env.AWS_REGION && !process.env.VERCEL;
+    let browser;
 
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath,
-      headless: chromium.headless,
-    });
+    if (isLocal) {
+      // 🧩 Local Dev
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      });
+    } else {
+      // ☁️ Production (Vercel/AWS)
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+      });
+    }
 
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
 
-    tempPdfPath = path.join(tmpdir(), `png-${Date.now()}.pdf`);
-    await page.pdf({ path: tempPdfPath, format: "A4" });
+    tempPdfPath = path.join(tmpdir(), `pngtopdf-${Date.now()}.pdf`);
+    await page.pdf({ path: tempPdfPath, format: "A4", printBackground: true });
+
     await browser.close();
 
     const pdfBuffer = await fs.promises.readFile(tempPdfPath);
@@ -91,18 +94,16 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("Error during PNG to PDF conversion:", error);
-    return new NextResponse(
-      JSON.stringify({ error: `Conversion failed: ${error.message}` }),
+    console.error("❌ PNG → PDF Conversion Failed:", error);
+    return NextResponse.json(
+      { error: `Conversion failed: ${error.message}` },
       { status: 500 }
     );
   } finally {
-    try {
-      if (tempPdfPath && fs.existsSync(tempPdfPath)) {
+    if (tempPdfPath && fs.existsSync(tempPdfPath)) {
+      try {
         await fs.promises.unlink(tempPdfPath);
-      }
-    } catch (cleanupError) {
-      console.error("Error cleaning up PDF temp file:", cleanupError);
+      } catch {}
     }
   }
 }
