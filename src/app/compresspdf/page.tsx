@@ -1,9 +1,35 @@
 "use client";
 
-import { useState } from "react";
+// import { useState } from "react";
 import Navbar from "../components/Navbar";
-
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../context/AuthContext";
 export default function CompressPdfPage() {
+  const { token, isLoading } = useAuth();
+  const router = useRouter();
+
+  // ✅ Redirect if not logged in
+  useEffect(() => {
+    if (!isLoading && !token) {
+      router.push("/login");
+    }
+  }, [isLoading, token, router]);
+
+  if (isLoading || !token) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          marginTop: "5rem",
+          fontSize: "1.5rem",
+          fontWeight: "bold",
+        }}
+      >
+        Checking authentication...
+      </div>
+    );
+  }
   const [files, setFiles] = useState<File[]>([]);
   const [isCompressing, setIsCompressing] = useState(false);
   const [error, setError] = useState<string | null>(null);

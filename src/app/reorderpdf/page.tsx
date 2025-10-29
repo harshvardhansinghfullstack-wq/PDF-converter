@@ -1,5 +1,7 @@
 "use client";
-
+// import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../context/AuthContext";
 import { useState, useRef, useEffect } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, arrayMove } from "@dnd-kit/sortable";
@@ -7,6 +9,30 @@ import { CSS } from "@dnd-kit/utilities";
 import Navbar from "../components/Navbar";
 
 export default function PdfReorderPage() {
+  const { token, isLoading } = useAuth();
+  const router = useRouter();
+
+  // ✅ Redirect if not logged in
+  useEffect(() => {
+    if (!isLoading && !token) {
+      router.push("/login");
+    }
+  }, [isLoading, token, router]);
+
+  if (isLoading || !token) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          marginTop: "5rem",
+          fontSize: "1.5rem",
+          fontWeight: "bold",
+        }}
+      >
+        Checking authentication...
+      </div>
+    );
+  }
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string>("");
   const [isEditingMode, setIsEditingMode] = useState(false);

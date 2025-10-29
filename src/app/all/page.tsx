@@ -1,7 +1,8 @@
 // src/app/all/page.tsx
+"use client";
 import Link from "next/link";
 import Navbar from "../components/Navbar";
-
+import { useState } from "react";
 // Define your tool data
 const pdfOperations = [
   {
@@ -93,16 +94,16 @@ const convertToPDF = [
     description: "Turn scanned images into searchable PDFs.",
     route: "/scantopdf",
   },
-  {
-    title: "CAD to PDF",
-    description: "Convert CAD drawings into PDF for easy sharing.",
-    route: "/cadtops",
-  },
-  {
-    title: "Any File to PDF",
-    description: "Universal converter—turn almost any document into PDF.",
-    route: "/anytopdf",
-  },
+  // {
+  //   title: "CAD to PDF",
+  //   description: "Convert CAD drawings into PDF for easy sharing.",
+  //   route: "/cadtops",
+  // },
+  // {
+  //   title: "Any File to PDF",
+  //   description: "Universal converter—turn almost any document into PDF.",
+  //   route: "/anytopdf",
+  // },
 ];
 
 const convertFromPDF = [
@@ -141,11 +142,11 @@ const convertFromPDF = [
     description: "Convert PDF into web-ready HTML.",
     route: "/pdftohtml",
   },
-  {
-    title: "PDF to AutoCAD",
-    description: "Convert PDFs back to DWG/DXF for editing in AutoCAD.",
-    route: "/pdftocad",
-  },
+  // {
+  //   title: "PDF to AutoCAD",
+  //   description: "Convert PDFs back to DWG/DXF for editing in AutoCAD.",
+  //   route: "/pdftocad",
+  // },
   {
     title: "PDF to Markdown",
     description: "Extract Markdown-friendly text from your PDF.",
@@ -161,11 +162,11 @@ const convertFromPDF = [
     description: "Export PDF content as XML.",
     route: "/pdftoxml",
   },
-  {
-    title: "PDF to Any Image",
-    description: "Convert PDF pages into any image format.",
-    route: "/pdftoimage",
-  },
+  // {
+  //   title: "PDF to Any Image",
+  //   description: "Convert PDF pages into any image format.",
+  //   route: "/pdftoimage",
+  // },
 ];
 
 const advancedTools = [
@@ -179,11 +180,11 @@ const advancedTools = [
     description: "Visually compare two PDFs and highlight differences.",
     route: "/comparepdf",
   },
-  {
-    title: "Optimize PDF (Web/Print)",
-    description: "Optimize for fast web viewing or high-res printing.",
-    route: "/optimizepdf",
-  },
+  // {
+  //   title: "Optimize PDF (Web/Print)",
+  //   description: "Optimize for fast web viewing or high-res printing.",
+  //   route: "/optimizepdf",
+  // },
   {
     title: "Add Watermark & Remove",
     description: "Stamp or remove watermarks from your PDFs.",
@@ -194,11 +195,11 @@ const advancedTools = [
     description: "Make scanned PDFs searchable with OCR powered by AI.",
     route: "/ocr",
   },
-  {
-    title: "API & Upload",
-    description: "Integrate our tools into your own apps via API.",
-    route: "/api",
-  },
+  // {
+  //   title: "API & Upload",
+  //   description: "Integrate our tools into your own apps via API.",
+  //   route: "/api",
+  // },
 ];
 
 const premiumTools = [
@@ -217,14 +218,15 @@ const premiumTools = [
     description: "Generate quiz questions from your PDF.",
     route: "/quiz",
   },
-  {
-    title: "Bulk Upload",
-    description: "Upload and process hundreds of PDFs at once.",
-    route: "/bulk-upload",
-  },
+  // {
+  //   title: "Bulk Upload",
+  //   description: "Upload and process hundreds of PDFs at once.",
+  //   route: "/bulk-upload",
+  // },
 ];
 
 export default function AllToolsPage() {
+  const [searchQuery, setSearchQuery] = useState("");
   return (
     <>
       <Navbar />
@@ -240,31 +242,35 @@ export default function AllToolsPage() {
 
         {/* Search & Categories */}
         <div style={{ display: "flex", gap: "1rem", marginBottom: "2rem" }}>
-          <input
-            type="search"
-            placeholder="Search tools…"
-            style={{
-              flex: 1,
-              padding: ".75rem 1rem",
-              borderRadius: "6px",
-              border: "1px solid #ccc",
-              fontSize: "1rem",
-            }}
-          />
-          <button
-            style={{
-              padding: ".75rem 1.5rem",
-              backgroundColor: "#0066FF",
-              color: "#fff",
-              border: "none",
-              borderRadius: "6px",
-              cursor: "pointer",
-              fontSize: "1rem",
-            }}
-          >
-            Categories
-          </button>
-        </div>
+   <input
+     type="search"
+     placeholder="Search tools…"
+    // ✅ ADD THESE TWO LINES
+     value={searchQuery}
+     onChange={(e) => setSearchQuery(e.target.value)}
+    // 
+     style={{
+       flex: 1,
+       padding: ".75rem 1rem",
+       borderRadius: "6px",
+       border: "1px solid #ccc",
+       fontSize: "1rem",
+     }}
+   />
+   <button
+     style={{
+       padding: ".75rem 1.5rem",
+       backgroundColor: "#0066FF",
+       color: "#fff",
+       border: "none",
+       borderRadius: "6px",
+       cursor: "pointer",
+       fontSize: "1rem",
+     }}
+   >
+     Categories
+   </button>
+</div>
 
         {/* Section generator */}
         {[
@@ -285,35 +291,42 @@ export default function AllToolsPage() {
                 gap: "1rem",
               }}
             >
-              {section.items.map((tool, i) => (
-                <Link
-                  key={i}
-                  href={tool.route}
-                  style={{
-                    display: "block",
-                    padding: "1rem",
-                    background:
-                      section.title === "PDF Operations"
-                        ? "#E6F4EA"
-                        : section.title === "Convert to PDF"
-                        ? "#FFF2E6"
-                        : section.title === "Convert from PDF"
-                        ? "#F3E6FF"
-                        : section.title === "Advanced & Specialized Tools"
-                        ? "#F0F0F0"
-                        : "#E6F0FF",
-                    borderRadius: "6px",
-                    textDecoration: "none",
-                    color: "#222",
-                    fontSize: ".95rem",
-                  }}
-                >
-                  <strong>{tool.title}</strong>
-                  <p style={{ marginTop: ".5rem", lineHeight: 1.3 }}>
-                    {tool.description}
-                  </p>
-                </Link>
-              ))}
+             {section.items
+  .filter(
+    (tool) =>
+      tool.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tool.description.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+  .map((tool, i) => (
+    <Link
+      key={i}
+      href={tool.route}
+      style={{
+        display: "block",
+        padding: "1rem",
+        background:
+          section.title === "PDF Operations"
+            ? "#E6F4EA"
+            : section.title === "Convert to PDF"
+            ? "#FFF2E6"
+            : section.title === "Convert from PDF"
+            ? "#F3E6FF"
+            : section.title === "Advanced & Specialized Tools"
+            ? "#F0F0F0"
+            : "#E6F0FF",
+        borderRadius: "6px",
+        textDecoration: "none",
+        color: "#222",
+        fontSize: ".95rem",
+      }}
+    >
+      <strong>{tool.title}</strong>
+      <p style={{ marginTop: ".5rem", lineHeight: 1.3 }}>
+        {tool.description}
+      </p>
+    </Link>
+  ))}
+
             </div>
           </section>
         ))}

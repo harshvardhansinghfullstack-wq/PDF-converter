@@ -44,8 +44,10 @@ export default function HomePage() {
     </p>
 
     <div className="hero-buttons">
-      <button className="primary-btn">Convert Now</button>
-      <button className="secondary-btn">Learn More</button>
+      <button className="primary-btn"  ><Link href="/all" style={{ color: "inherit", textDecoration: "none" }}>
+    Convert Now
+  </Link></button>
+      <button className="secondary-btn"><Link href="/about" style={{ color: "inherit", textDecoration: "none" }}>Learn More</Link></button>
     </div>
   </div>
 
@@ -409,7 +411,7 @@ export default function HomePage() {
               </div>
 
               <Link
-                href="/learn-more"
+                href="/blogs"
                 style={{
                   color: "#0070f3",
                   textDecoration: "none",
@@ -615,8 +617,8 @@ export default function HomePage() {
                     cursor: "pointer",
                     fontSize: "1rem",
                   }}
-                >
-                  Explore →
+                > <Link href="/all" style={{ color: "inherit", textDecoration: "none" }}>
+                  Explore →</Link>
                 </button>
               </div>
             ))}
@@ -849,8 +851,8 @@ export default function HomePage() {
                       cursor: "pointer",
                       fontSize: "0.9rem",
                     }}
-                  >
-                    Learn More →
+                  >  <Link href="/about" style={{ color: "inherit", textDecoration: "none" }}>
+                    Learn More →</Link>
                   </button>
                 </div>
 

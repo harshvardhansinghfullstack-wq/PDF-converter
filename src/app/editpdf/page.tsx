@@ -1,9 +1,35 @@
 
 "use client";
-
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../context/AuthContext";
 import { useState, useRef } from "react";
 import Navbar from "../components/Navbar";
 export default function EditPdfPage() {
+  const { token, isLoading } = useAuth();
+  const router = useRouter();
+
+  // ✅ Redirect if not logged in
+  useEffect(() => {
+    if (!isLoading && !token) {
+      router.push("/login");
+    }
+  }, [isLoading, token, router]);
+
+  if (isLoading || !token) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          marginTop: "5rem",
+          fontSize: "1.5rem",
+          fontWeight: "bold",
+        }}
+      >
+        Checking authentication...
+      </div>
+    );
+  }
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string>("");
   const [isEditingMode, setIsEditingMode] = useState(false);

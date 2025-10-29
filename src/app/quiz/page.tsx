@@ -1,7 +1,33 @@
 "use client";
-import React, { useState } from "react";
-
+import React from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../context/AuthContext";
 export default function PdfQuizGenerator() {
+  const { token, isLoading } = useAuth();
+  const router = useRouter();
+
+  // ✅ Redirect if not logged in
+  useEffect(() => {
+    if (!isLoading && !token) {
+      router.push("/login");
+    }
+  }, [isLoading, token, router]);
+
+  if (isLoading || !token) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          marginTop: "5rem",
+          fontSize: "1.5rem",
+          fontWeight: "bold",
+        }}
+      >
+        Checking authentication...
+      </div>
+    );
+  }
   const [file, setFile] = useState<File | null>(null);
   const [questions, setQuestions] = useState("");
   const [loading, setLoading] = useState(false);

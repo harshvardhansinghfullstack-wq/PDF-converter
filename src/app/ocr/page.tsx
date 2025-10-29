@@ -1,16 +1,42 @@
 "use client";
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../context/AuthContext";
+// import { useState } from "react";
 import Tesseract from "tesseract.js";
 import Image from "next/image";
 import { jsPDF } from "jspdf";
 import Navbar from "../components/Navbar"; // If you have a Navbar component
 
 export default function ImageTextExtractor() {
+   const { token, isLoading } = useAuth();
+  const router = useRouter();
+
+  // ✅ Redirect if not logged in
+  useEffect(() => {
+    if (!isLoading && !token) {
+      router.push("/login");
+    }
+  }, [isLoading, token, router]);
+
+  if (isLoading || !token) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          marginTop: "5rem",
+          fontSize: "1.5rem",
+          fontWeight: "bold",
+        }}
+      >
+        Checking authentication...
+      </div>
+    );
+  }
   const [image, setImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [extractedText, setExtractedText] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadaing, setIsLoadaing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -44,7 +70,7 @@ export default function ImageTextExtractor() {
       return;
     }
 
-    setIsLoading(true);
+    setIsLoadaing(true);
     setError(null);
 
     try {
@@ -56,7 +82,7 @@ export default function ImageTextExtractor() {
       console.error(err);
       setError("Error processing image. Please try again.");
     } finally {
-      setIsLoading(false);
+      setIsLoadaing(false);
     }
   };
 
@@ -184,20 +210,20 @@ export default function ImageTextExtractor() {
 
         <button
           onClick={extractText}
-          disabled={!image || isLoading}
+          disabled={!image || isLoadaing}
           style={{
-            backgroundColor: isLoading ? "#ccc" : "#0070f3",
+            backgroundColor: isLoadaing ? "#ccc" : "#0070f3",
             color: "white",
             border: "none",
             padding: "0.6rem 1.2rem",
             borderRadius: "5px",
-            cursor: isLoading ? "not-allowed" : "pointer",
+            cursor: isLoadaing ? "not-allowed" : "pointer",
             fontSize: "1rem",
             marginRight: "1rem",
           }}
         >
           <i className="fas fa-search" style={{ marginRight: "0.5rem" }}></i>
-          {isLoading ? "Processing..." : "Extract Text"}
+          {isLoadaing ? "Processing..." : "Extract Text"}
         </button>
 
         <button

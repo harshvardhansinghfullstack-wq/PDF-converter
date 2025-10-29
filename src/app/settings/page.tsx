@@ -2,63 +2,106 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
+// ✅ Import the new CSS Module
+import styles from "./SettingsPage.module.css";
 
-const SettingsPage: React.FC = () => {
-  const { user, logout, token, isLoading } = useAuth();
-  const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"account" | "subscription" | "settings">("account");
+// ✅ Helper type for message state
+type MessageState = { type: "" | "success" | "error"; text: string };
+const initialMessage: MessageState = { type: "", text: "" };
 
-  // Account form state
+// ✅ Safely get initials (prevents crash for OAuth users)
+const getInitials = (user: any) : string => {
+  if (!user) return "U";
+  const first = user.firstName?.charAt(0) || "";
+  const last = user.lastName?.charAt(0) || "";
+  const initials = (first + last).toUpperCase();
+  return initials || "U";
+};
+
+// ✅ Safe display name
+const getDisplayName = (user: any): string => {
+  if (!user) return "";
+  if (user.firstName || user.lastName)
+    return `${user.firstName || ""} ${user.lastName || ""}`.trim();
+  return user.email?.split("@")[0] || "User";
+};
+
+// =================================================================
+// 1. SIDEBAR COMPONENT
+// =================================================================
+interface SidebarProps {
+  user: any; // Replace 'any' with your User type
+  activeTab: string;
+  setActiveTab: (tab: "account" | "subscription" | "settings") => void;
+  onLogout: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogout }) => {
+  const SidebarItem = (label: string, key: "account" | "subscription" | "settings") => (
+    <button
+      type="button"
+      onClick={() => setActiveTab(key)}
+      // ✅ Conditionally apply 'active' class
+      className={`${styles.sidebarItem} ${activeTab === key ? styles.active : ""}`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className={styles.sidebar}>
+      <div className={styles.brand}>FileMint</div>
+      <div className={styles.profileAvatar}>{getInitials(user)}</div>
+      <div className={styles.displayName}>{getDisplayName(user)}</div>
+
+      {SidebarItem("Account", "account")}
+      {SidebarItem("Subscription", "subscription")}
+      {SidebarItem("Settings", "settings")}
+
+      <button onClick={onLogout} className={styles.logoutButton}>
+        Log Out
+      </button>
+    </div>
+  );
+};
+
+// =================================================================
+// 2. MESSAGE COMPONENT (Helper)
+// =================================================================
+const MessageDisplay: React.FC<{ message: MessageState }> = ({ message }) => {
+  if (!message.text) return null;
+  return (
+    <div
+      className={`${styles.messageBox} ${
+        message.type === "success" ? styles.messageSuccess : styles.messageError
+      }`}
+    >
+      {message.text}
+    </div>
+  );
+};
+
+// =================================================================
+// 3. ACCOUNT TAB (Split into sub-forms)
+// =================================================================
+
+// 3a. Account Details Form
+const AccountDetailsForm: React.FC<{ user: any; token: string | null }> = ({ user, token }) => {
   const [accountForm, setAccountForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
+    firstName: user?.firstName || "",
+    lastName: user?.lastName || "",
   });
-
-  // Password form state
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: "",
-    newPassword: "",
-    repeatPassword: "",
-  });
-
-  const [showPassword, setShowPassword] = useState({
-    current: false,
-    new: false,
-    repeat: false,
-  });
-
-  const [message, setMessage] = useState({ type: "", text: "" });
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push("/login");
-    }
-  }, [user, isLoading, router]);
-
-  useEffect(() => {
-    if (user) {
-      setAccountForm({
-        firstName: user.firstName || "",
-        lastName: user.lastName || "",
-        email: user.email || "",
-      });
-    }
-  }, [user]);
+  const [isAccountLoading, setIsAccountLoading] = useState(false);
+  const [accountMessage, setAccountMessage] = useState<MessageState>(initialMessage);
 
   const handleAccountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setAccountForm({ ...accountForm, [e.target.name]: e.target.value });
   };
 
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPasswordForm({ ...passwordForm, [e.target.name]: e.target.value });
-  };
-
   const handleAccountUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setMessage({ type: "", text: "" });
+    setIsAccountLoading(true);
+    setAccountMessage(initialMessage);
 
     try {
       const response = await fetch("/api/user/profile", {
@@ -69,35 +112,100 @@ const SettingsPage: React.FC = () => {
         },
         body: JSON.stringify(accountForm),
       });
-
       const data = await response.json();
-
       if (response.ok) {
-        setMessage({ type: "success", text: "Account updated successfully!" });
+        setAccountMessage({ type: "success", text: "Account updated successfully!" });
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to update account" });
+        setAccountMessage({ type: "error", text: data.error || "Failed to update account" });
       }
     } catch (error) {
-      setMessage({ type: "error", text: "An error occurred" });
+      setAccountMessage({ type: "error", text: "An error occurred" });
     } finally {
-      setLoading(false);
+      setIsAccountLoading(false);
     }
+  };
+
+  return (
+    <form onSubmit={handleAccountUpdate} className={styles.formContainer}>
+      <MessageDisplay message={accountMessage} />
+      <div>
+        <div style={{ fontWeight: 600, marginTop: "1rem" }}>Email</div>
+        <div style={{ margin: "4px 0" }}>{user.email}</div>
+      </div>
+
+      <div className={styles.formSection}>
+        <label className={styles.label} htmlFor="firstName">
+          First Name
+        </label>
+        <input
+          type="text"
+          name="firstName"
+          id="firstName"
+          value={accountForm.firstName}
+          onChange={handleAccountChange}
+          placeholder="First Name"
+          className={styles.inputField}
+          required
+        />
+        
+        <label className={styles.label} htmlFor="lastName">
+          Last Name
+        </label>
+        <input
+          type="text"
+          name="lastName"
+          id="lastName"
+          value={accountForm.lastName}
+          onChange={handleAccountChange}
+          placeholder="Last Name"
+          className={styles.inputField}
+          required
+        />
+        
+        <button type="submit" disabled={isAccountLoading} className={styles.submitButton}>
+          {isAccountLoading ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
+    </form>
+  );
+};
+
+// 3b. Password Change Form
+const PasswordChangeForm: React.FC<{ token: string | null }> = ({ token }) => {
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    repeatPassword: "",
+  });
+  const [isPasswordLoading, setIsPasswordLoading] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<MessageState>(initialMessage);
+  const [showPassword, setShowPassword] = useState({
+    current: false,
+    new: false,
+    repeat: false,
+  });
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPasswordForm({ ...passwordForm, [e.target.name]: e.target.value });
+  };
+
+  const toggleShowPassword = (key: keyof typeof showPassword) => {
+    setShowPassword((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setMessage({ type: "", text: "" });
+    setIsPasswordLoading(true);
+    setPasswordMessage(initialMessage);
 
     if (passwordForm.newPassword !== passwordForm.repeatPassword) {
-      setMessage({ type: "error", text: "Passwords do not match" });
-      setLoading(false);
+      setPasswordMessage({ type: "error", text: "Passwords do not match" });
+      setIsPasswordLoading(false);
       return;
     }
-
     if (passwordForm.newPassword.length < 8) {
-      setMessage({ type: "error", text: "Password must be at least 8 characters" });
-      setLoading(false);
+      setPasswordMessage({ type: "error", text: "Password must be at least 8 characters" });
+      setIsPasswordLoading(false);
       return;
     }
 
@@ -113,60 +221,161 @@ const SettingsPage: React.FC = () => {
           newPassword: passwordForm.newPassword,
         }),
       });
-
       const data = await response.json();
-
       if (response.ok) {
-        setMessage({ type: "success", text: "Password updated successfully!" });
+        setPasswordMessage({ type: "success", text: "Password updated successfully!" });
         setPasswordForm({ currentPassword: "", newPassword: "", repeatPassword: "" });
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to update password" });
+        setPasswordMessage({ type: "error", text: data.error || "Failed to update password" });
       }
     } catch (error) {
-      setMessage({ type: "error", text: "An error occurred" });
+      setPasswordMessage({ type: "error", text: "An error occurred" });
     } finally {
-      setLoading(false);
+      setIsPasswordLoading(false);
     }
   };
 
-  const SidebarItem = (label: string, key: "account" | "subscription" | "settings") => (
-    <div
-      onClick={() => {
-        setActiveTab(key);
-        setMessage({ type: "", text: "" });
-      }}
-      style={{
-        width: "80%",
-        height: "30px",
-        padding: "1rem 2rem",
-        cursor: "pointer",
-        fontWeight: 600,
-        color: "#1e1e1e",
-        backgroundColor: activeTab === key ? "#e6e8f2" : "transparent",
-        borderLeft: activeTab === key ? "4px solid #1e2b50" : "none",
-      }}
-    >
-      {label}
-    </div>
+  const passwordFields = [
+    { name: "currentPassword", label: "Current Password", key: "current" },
+    { name: "newPassword", label: "New Password", key: "new" },
+    { name: "repeatPassword", label: "Repeat Password", key: "repeat" },
+  ] as const;
+
+  return (
+    <form onSubmit={handlePasswordUpdate}>
+      <div className={styles.subheading}>Change Password</div>
+      <MessageDisplay message={passwordMessage} />
+      <div className={styles.formSection}>
+        {passwordFields.map((field) => (
+          <div key={field.name} className={styles.passwordInputWrapper}>
+            <label className="sr-only" htmlFor={field.name}> {/* Screen-reader only label */}
+              {field.label}
+            </label>
+            <input
+              type={showPassword[field.key] ? "text" : "password"}
+              name={field.name}
+              id={field.name}
+              value={passwordForm[field.name]}
+              onChange={handlePasswordChange}
+              placeholder={field.label}
+              className={styles.inputField}
+              required
+            />
+            <button
+              type="button"
+              className={styles.showPasswordButton}
+              onClick={() => toggleShowPassword(field.key)}
+              aria-label={showPassword[field.key] ? "Hide password" : "Show password"}
+            >
+              {showPassword[field.key] ? "🙈" : "👁️"}
+            </button>
+          </div>
+        ))}
+        <button type="submit" disabled={isPasswordLoading} className={styles.submitButton}>
+          {isPasswordLoading ? "Updating..." : "Save Changes"}
+        </button>
+      </div>
+    </form>
   );
+};
 
-  // ✅ Safely get initials (prevents crash for OAuth users)
-  const getInitials = () => {
-    if (!user) return "U";
-    const first = user.firstName?.charAt(0) || "";
-    const last = user.lastName?.charAt(0) || "";
-    const initials = (first + last).toUpperCase();
-    return initials || "U";
-  };
+// 3c. Account Tab Container
+const AccountSettingsTab: React.FC<{ user: any; token: string | null }> = ({ user, token }) => {
+  return (
+    <>
+      <div className={styles.heading}>Account</div>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: "2rem" }}>
+        <div className={styles.profileAvatar} style={{ width: 60, height: 60, fontSize: 20, marginRight: '1rem' }}>
+          {getInitials(user)}
+        </div>
+        {/* ✅ A11y: This should be a button if it does something (e.g., open modal) */}
+        <button type="button" className={styles.clickableText} style={{ textDecoration: 'none' }}>
+          ✏️ Update profile
+        </button>
+      </div>
+      <AccountDetailsForm user={user} token={token} />
+      <PasswordChangeForm token={token} />
+    </>
+  );
+};
 
-  // ✅ Safe display name
-  const getDisplayName = () => {
-    if (!user) return "";
-    if (user.firstName || user.lastName)
-      return `${user.firstName || ""} ${user.lastName || ""}`.trim();
-    return user.email?.split("@")[0] || "User";
-  };
+// =================================================================
+// 4. SUBSCRIPTION TAB
+// =================================================================
+const SubscriptionTab: React.FC = () => {
+  const features = [
+    "Full access to all tools in FileMint",
+    "Unlimited storage for all your files",
+    "Work on Web, Mobile and Desktop",
+    "Convert scanned PDF to Word with OCR, Sign with digital signatures, audio to PDF, PDF language Converter, API Generator, Bulk PDF Merge",
+    "No Ads.",
+  ];
 
+  return (
+    <>
+      <div className={styles.heading}>Subscriptions</div>
+      <div className={styles.upgradeLink}>Upgrade to Premium 💎</div>
+      {features.map((item, i) => (
+        <div key={i} className={styles.featureItem}>
+          <span className={styles.featureCheck}>✓</span> {item}
+        </div>
+      ))}
+    </>
+  );
+};
+
+// =================================================================
+// 5. SETTINGS TAB
+// =================================================================
+const SettingsTab: React.FC = () => {
+  return (
+    <>
+      <div className={styles.heading}>Preferences</div>
+
+      <div className={styles.preferenceItem}>
+        <div className={styles.preferenceTitle}>Language</div>
+        <div className={styles.preferenceText}>English</div>
+        <button type="button" className={styles.clickableText}>
+          Change
+        </button>
+      </div>
+
+      <div className={styles.preferenceItem}>
+        <div className={styles.preferenceTitle}>Email Notifications</div>
+        <div className={styles.preferenceText}>
+          No longer wish to receive promotional emails from us? You can do so here.
+        </div>
+        <button type="button" className={styles.dangerText}>
+          Disable Emails
+        </button>
+      </div>
+
+      <div className={styles.preferenceItem}>
+        <div className={styles.preferenceTitle}>Manage Account</div>
+        <button type="button" className={styles.dangerText}>
+          Delete Account
+        </button>
+      </div>
+    </>
+  );
+};
+
+// =================================================================
+// 6. MAIN PAGE COMPONENT
+// =================================================================
+const SettingsPage: React.FC = () => {
+  const { user, logout, token, isLoading } = useAuth();
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"account" | "subscription" | "settings">("account");
+
+  // Auth redirection
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push("/login");
+    }
+  }, [user, isLoading, router]);
+
+  // Loading spinner
   if (isLoading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
@@ -175,297 +384,34 @@ const SettingsPage: React.FC = () => {
     );
   }
 
+  // Null render until redirect effect fires
   if (!user) {
     return null;
   }
 
+  // Helper to render the correct tab
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case "account":
+        return <AccountSettingsTab user={user} token={token} />;
+      case "subscription":
+        return <SubscriptionTab />;
+      case "settings":
+        return <SettingsTab />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div style={{ display: "flex", fontFamily: "Georgia, serif", height: "100vh", backgroundColor: "#fdf9f7" }}>
-      {/* Sidebar */}
-      <div
-        style={{
-          width: "360px",
-          backgroundColor: "#f7f7f9",
-          borderRight: "1px solid #ddd",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          paddingTop: "2rem",
-        }}
-      >
-        <div style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "3rem", color: "#1e1e2f" }}>FileMint</div>
-
-        {/* Profile Image */}
-        <div
-          style={{
-            width: "100px",
-            height: "100px",
-            borderRadius: "50%",
-            backgroundColor: "#1e2b50",
-            color: "#fff",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            fontSize: "24px",
-            marginBottom: "1rem",
-            fontWeight: "bold",
-          }}
-        >
-          {getInitials()}
-        </div>
-
-        <div style={{ fontSize: "18px", fontWeight: "600", marginBottom: "2rem", color: "#1e1e2f" }}>
-          {getDisplayName()}
-        </div>
-
-        {SidebarItem("Account", "account")}
-        {SidebarItem("Subscription", "subscription")}
-        {SidebarItem("Settings", "settings")}
-
-        {/* Logout Button */}
-        <button
-          onClick={logout}
-          style={{
-            marginTop: "auto",
-            marginBottom: "2rem",
-            width: "80%",
-            padding: "1rem 2rem",
-            backgroundColor: "#e63946",
-            color: "#fff",
-            fontWeight: 600,
-            cursor: "pointer",
-            border: "none",
-            borderRadius: "8px",
-            textAlign: "center",
-            fontSize: "16px",
-          }}
-        >
-          Log Out
-        </button>
-      </div>
-
-      {/* Main Content */}
-      <div style={{ flex: 1, padding: "3rem", overflowY: "auto" }}>
-        {message.text && (
-          <div
-            style={{
-              padding: "12px 20px",
-              borderRadius: "6px",
-              marginBottom: "20px",
-              backgroundColor: message.type === "success" ? "#d4edda" : "#f8d7da",
-              color: message.type === "success" ? "#155724" : "#721c24",
-              border: `1px solid ${message.type === "success" ? "#c3e6cb" : "#f5c6cb"}`,
-            }}
-          >
-            {message.text}
-          </div>
-        )}
-
-        {/* Rest of your tabs remain exactly same */}
-        {activeTab === "account" && (
-          <>
-            <div style={{ fontSize: "32px", fontWeight: "bold", marginBottom: "2rem" }}>Account</div>
-
-            <div style={{ display: "flex", alignItems: "center", marginBottom: "2rem" }}>
-              <div
-                style={{
-                  width: "60px",
-                  height: "60px",
-                  borderRadius: "50%",
-                  backgroundColor: "#1e2b50",
-                  color: "#fff",
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  fontSize: "20px",
-                  marginRight: "1rem",
-                  fontWeight: "bold",
-                }}
-              >
-                {getInitials()}
-              </div>
-              <div style={{ color: "#000", fontSize: "16px", cursor: "pointer" }}>✏️ Update profile</div>
-            </div>
-
-            <form onSubmit={handleAccountUpdate} style={{ marginBottom: "3rem" }}>
-              <div>
-                <div style={{ fontWeight: 600, marginTop: "1rem" }}>Email</div>
-                <div style={{ margin: "4px 0" }}>{user.email}</div>
-              </div>
-
-              <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", maxWidth: "400px" }}>
-                <label style={{ fontWeight: 600, marginBottom: "0.5rem" }}>First Name</label>
-                <input
-                  type="text"
-                  name="firstName"
-                  value={accountForm.firstName}
-                  onChange={handleAccountChange}
-                  placeholder="First Name"
-                  style={{
-                    padding: "15px 10px",
-                    fontSize: "14px",
-                    borderRadius: "6px",
-                    border: "1px solid #ccc",
-                    marginBottom: "1rem",
-                  }}
-                  required
-                />
-                <label style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Last Name</label>
-                <input
-                  type="text"
-                  name="lastName"
-                  value={accountForm.lastName}
-                  onChange={handleAccountChange}
-                  placeholder="Last Name"
-                  style={{
-                    padding: "15px 10px",
-                    fontSize: "14px",
-                    borderRadius: "6px",
-                    border: "1px solid #ccc",
-                    marginBottom: "1rem",
-                  }}
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    backgroundColor: loading ? "#999" : "#1e2b50",
-                    color: "#fff",
-                    padding: "15px 20px",
-                    fontSize: "16px",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: loading ? "not-allowed" : "pointer",
-                    marginTop: "0.5rem",
-                  }}
-                >
-                  {loading ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-
-            {/* Change password section stays exactly the same */}
-            <div style={{ fontSize: "20px", fontWeight: 600, marginTop: "2rem", marginBottom: "1.5rem" }}>
-              Change Password
-            </div>
-            <form onSubmit={handlePasswordUpdate}>
-              <div style={{ display: "flex", flexDirection: "column", maxWidth: "400px" }}>
-                {[
-                  { name: "currentPassword", label: "Current Password", key: "current" },
-                  { name: "newPassword", label: "New Password", key: "new" },
-                  { name: "repeatPassword", label: "Repeat Password", key: "repeat" },
-                ].map((field) => (
-                  <div key={field.name} style={{ position: "relative", marginBottom: "1rem" }}>
-                    <input
-                      type={showPassword[field.key as keyof typeof showPassword] ? "text" : "password"}
-                      name={field.name}
-                      value={passwordForm[field.name as keyof typeof passwordForm]}
-                      onChange={handlePasswordChange}
-                      placeholder={field.label}
-                      style={{
-                        padding: "15px 12px",
-                        fontSize: "14px",
-                        borderRadius: "6px",
-                        border: "1px solid #ccc",
-                        width: "100%",
-                      }}
-                      required
-                    />
-                    <span
-                      onClick={() =>
-                        setShowPassword({
-                          ...showPassword,
-                          [field.key]: !showPassword[field.key as keyof typeof showPassword],
-                        })
-                      }
-                      style={{
-                        position: "absolute",
-                        right: "10px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {showPassword[field.key as keyof typeof showPassword] ? "🙈" : "👁️"}
-                    </span>
-                  </div>
-                ))}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    backgroundColor: loading ? "#999" : "#1e2b50",
-                    color: "#fff",
-                    padding: "15px 20px",
-                    fontSize: "16px",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: loading ? "not-allowed" : "pointer",
-                    marginTop: "0.5rem",
-                  }}
-                >
-                  {loading ? "Updating..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </>
-        )}
-
-        {/* Subscription + Settings sections remain unchanged */}
-        {activeTab === "subscription" && (
-          <>
-            <div style={{ fontSize: "32px", fontWeight: "bold", marginBottom: "1.5rem" }}>Subscriptions</div>
-            <div
-              style={{
-                color: "#304ffe",
-                textDecoration: "underline",
-                fontWeight: 600,
-                marginBottom: "1.5rem",
-                cursor: "pointer",
-              }}
-            >
-              Upgrade to Premium 💎
-            </div>
-            {[
-              "Full access to all tools in FileMint",
-              "Unlimited storage for all your files",
-              "Work on Web, Mobile and Desktop",
-              "Convert scanned PDF to Word with OCR, Sign with digital signatures, audio to PDF, PDF language Converter, API Generator, Bulk PDF Merge",
-              "No Ads.",
-            ].map((item, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", marginBottom: "1rem", fontSize: "18px" }}>
-                <span style={{ color: "green", fontSize: "20px", marginRight: "10px" }}>✓</span> {item}
-              </div>
-            ))}
-          </>
-        )}
-
-        {activeTab === "settings" && (
-          <>
-            <div style={{ fontSize: "32px", fontWeight: "bold", marginBottom: "1.5rem" }}>Preferences</div>
-
-            <div style={{ marginBottom: "2rem" }}>
-              <div style={{ fontWeight: 600, fontSize: "18px" }}>Language</div>
-              <div style={{ margin: "4px 0" }}>English</div>
-              <div style={{ color: "#304ffe", textDecoration: "underline", cursor: "pointer" }}>Change</div>
-            </div>
-
-            <div style={{ marginBottom: "2rem" }}>
-              <div style={{ fontWeight: 600, fontSize: "18px" }}>Email Notifications</div>
-              <div style={{ margin: "4px 0" }}>
-                No longer wish to receive promotional emails from us? You can do so here.
-              </div>
-              <div style={{ color: "red", cursor: "pointer" }}>Disable Emails</div>
-            </div>
-
-            <div>
-              <div style={{ fontWeight: 600, fontSize: "18px" }}>Manage Account</div>
-              <div style={{ color: "red", cursor: "pointer", marginTop: "4px" }}>Delete Account</div>
-            </div>
-          </>
-        )}
-      </div>
+    <div className={styles.pageWrapper}>
+      <Sidebar
+        user={user}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onLogout={logout}
+      />
+      <main className={styles.mainContent}>{renderActiveTab()}</main>
     </div>
   );
 };

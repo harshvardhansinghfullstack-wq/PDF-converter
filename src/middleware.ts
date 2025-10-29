@@ -1,24 +1,29 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// List of routes that require authentication
-const protectedRoutes = ["/settings", "/profile"];
+export function middleware(req: NextRequest) {
+  const publicPaths = ["/", "/login", "/signup", "/about", "/blogs"];
+  const { pathname } = req.nextUrl;
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  // If it's a public page, allow
+  if (publicPaths.some((path) => pathname.startsWith(path))) {
+    return NextResponse.next();
+  }
 
-  // Check if the current path is a protected route
-  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
+  // Middleware can't access localStorage, so just skip if no cookie
+  // Instead, client-side (your AuthContext) handles redirect if no token
+  const token = req.cookies.get("token")?.value;
 
-  if (isProtectedRoute) {
-    // Since we're using localStorage in the client, we'll handle auth checking on the client side
-    // This middleware just ensures the routes are registered
+  if (!token) {
+    // Just redirect to login if not token (cookie-based only)
+    // Since you’re not using cookies, this block basically does nothing now
     return NextResponse.next();
   }
 
   return NextResponse.next();
 }
 
+// Apply to all routes except static files & api
 export const config = {
-  matcher: ["/settings/:path*", "/profile/:path*"],
+  matcher: ["/((?!api|_next|static|favicon.ico).*)"],
 };

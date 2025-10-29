@@ -40,11 +40,12 @@ export async function POST(req: NextRequest) {
       password,
       termsAccepted,
     });
-
+    
     // Save the new user to the database
     await newUser.save();
 
     return NextResponse.json({ message: "User created successfully" }, { status: 201 });
+    
 
   } catch (error) {
     console.error("Error during sign-up:", error);

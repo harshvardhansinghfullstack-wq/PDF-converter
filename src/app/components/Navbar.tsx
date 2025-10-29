@@ -21,7 +21,7 @@ export default function Header() {
         {/* Logo */}
         <div className="logo-container">
           <Link href="/">
-            <img src="/logo.png" alt="Logo" className="logo" />
+            <img src="/Group-14.svg" alt="Logo" className="logo" />
           </Link>
         </div>
 
@@ -229,35 +229,49 @@ export default function Header() {
         }
 
         /* Responsive Styles */
-        @media (max-width: 768px) {
-          .hamburger {
-            display: flex;
-          }
-          .nav {
-            display: none;
-            width: 100%;
-            position: absolute;
-            top: 70px;
-            left: 0;
-            background: #f0f8ff;
-            padding: 1rem 0;
-            border-radius: 0;
-          }
-          .nav.active {
-            display: block;
-            animation: slideDown 0.3s ease;
-          }
-          .nav ul {
-            flex-direction: column;
-            gap: 12px;
-          }
-          .desktop-only {
-            display: none;
-          }
-          .mobile-only {
-            display: block;
-          }
-        }
+       @media (max-width: 768px) {
+  .hamburger {
+    display: flex;
+  }
+
+  .nav {
+    display: none;
+    width: 100%;
+    position: absolute;
+    top: 70px;
+    left: 0;
+    background: #f0f8ff;
+    padding: 1.5rem 0; /* 🔼 increased padding */
+    border-radius: 0;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); /* nice drop shadow */
+    
+  }
+
+  .nav.active {
+    display: block;
+    animation: slideDown 0.3s ease;
+  }
+
+  .nav ul {
+    flex-direction: column;
+    gap: 16px; /* 🔼 add more spacing between items */
+    margin: 0;
+    padding: 0;
+  }
+
+  .nav li {
+    padding: 0.5rem 0; /* 🔼 give each item some vertical space */
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-only {
+    display: block;
+  }
+}
+
 
         @media (min-width: 769px) {
           .mobile-only {
@@ -288,6 +302,27 @@ export default function Header() {
           text-decoration: none !important;
           color: #000000ff !important;
         }
+          @media (max-width: 768px) {
+  .nav {
+    position: absolute;
+    top: 100%;        /* attaches nav exactly below the header */
+    left: 0;
+    width: 100%;
+    background: #f0f8ff;
+    border-top: none;
+    box-shadow: none; /* removes shadow line effect */
+    z-index: 999;
+   
+  }
+
+  .header {
+    box-shadow: none; /* remove header shadow on mobile for clean look */
+  }
+    .logo-container{
+    margin-top:30px;,
+    }
+}
+
       `}</style>
     </>
   );

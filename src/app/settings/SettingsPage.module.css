@@ -1,0 +1,297 @@
+/* SettingsPage.module.css */
+
+/* Main Layout */
+.pageWrapper {
+  display: flex;
+  font-family: "Georgia", serif;
+  min-height: 100vh;
+  background-color: #fdf9f7;
+}
+
+.sidebar {
+  width: 360px;
+  background-color: #f7f7f9;
+  border-right: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 2rem;
+  /* Ensure sidebar doesn't shrink */
+  flex-shrink: 0;
+}
+
+.mainContent {
+  flex-grow: 1;
+  padding: 3rem;
+  overflow-y: auto;
+}
+
+/* Sidebar Specifics */
+.brand {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 3rem;
+  color: #1e1e2f;
+}
+
+.profileAvatar {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background-color: #1e2b50;
+  color: #fff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 24px;
+  margin-bottom: 1rem;
+  font-weight: bold;
+}
+
+.displayName {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 2rem;
+  color: #1e1e2f;
+}
+
+.sidebarItem {
+  width: 80%;
+  /* height: 30px; */  /* ✅ REMOVED THIS LINE */
+  padding: 1rem 2rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: #1e1e1e;
+  background-color: transparent;
+  border: none;
+  text-align: center; 
+  font-family: "Georgia", serif;
+  font-size: 16px;
+  border-left: 4px solid transparent;
+  transition: background-color 0.2s, border-left 0.2s;
+  box-sizing: border-box;
+}
+
+.sidebarItem.active {
+  background-color: #e6e8f2;
+  border-left: 4px solid #1e2b50;
+}
+
+.sidebarItem:hover:not(.active) {
+  background-color: #f0f1f6;
+}
+
+.logoutButton {
+  margin-top: auto;
+  margin-bottom: 2rem;
+  width: 80%;
+  padding: 1rem 2rem;
+  background-color: #e63946;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 16px;
+  font-family: "Georgia", serif;
+  transition: background-color 0.2s;
+}
+
+.logoutButton:hover {
+  background-color: #c9303c;
+}
+
+/* Main Content Specifics */
+.heading {
+  font-size: 32px;
+  font-weight: bold;
+  margin-bottom: 1.5rem;
+}
+
+.subheading {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Forms */
+.formContainer {
+  margin-bottom: 3rem;
+}
+
+.formSection {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  max-width: 400px;
+}
+
+.label {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.inputField {
+  padding: 15px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  width: 100%;
+  box-sizing: border-box; /* Important for 100% width */
+  margin-bottom: 1rem;
+  font-family: "Georgia", serif;
+}
+
+.passwordInputWrapper {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.showPasswordButton {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: 20px; /* Make emoji clearer */
+  padding: 0 4px;
+}
+
+.submitButton {
+  background-color: #1e2b50;
+  color: #fff;
+  padding: 15px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  font-family: "Georgia", serif;
+  transition: background-color 0.2s;
+}
+
+.submitButton:hover {
+  background-color: #3a4a78;
+}
+
+.submitButton:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+/* Message Box */
+.messageBox {
+  padding: 12px 20px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+
+.messageSuccess {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.messageError {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+/* Other Tabs */
+.clickableText {
+  color: #304ffe;
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1em; /* Inherit font size */
+  font-family: "Georgia", serif;
+}
+
+.dangerText {
+  color: #e63946;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 4px;
+  font-size: 1em; /* Inherit font size */
+  font-family: "Georgia", serif;
+  font-weight: 600;
+}
+
+.upgradeLink {
+  color: #304ffe;
+  text-decoration: underline;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  cursor: pointer;
+}
+
+.featureItem {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  font-size: 18px;
+}
+
+.featureCheck {
+  color: green;
+  font-size: 20px;
+  margin-right: 10px;
+}
+
+.preferenceItem {
+  margin-bottom: 2rem;
+}
+
+.preferenceTitle {
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.preferenceText {
+  margin: 4px 0;
+}
+
+/* Responsiveness */
+@media (max-width: 768px) {
+  .pageWrapper {
+    flex-direction: column;
+    height: auto; /* Allow content to grow */
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #ddd;
+    height: auto;
+  }
+
+  .logoutButton {
+    margin-top: 2rem; /* Remove 'auto' margin */
+  }
+
+  .mainContent {
+    padding: 1.5rem;
+    overflow-y: visible;
+  }
+
+  .heading {
+    font-size: 28px;
+  }
+
+  .formSection {
+    max-width: 100%; /* Allow forms to fill width */
+  }
+
+  .featureItem {
+    font-size: 16px;
+  }
+}

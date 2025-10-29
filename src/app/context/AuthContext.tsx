@@ -14,7 +14,13 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
-  signup: (firstName: string, lastName: string, email: string, password: string, termsAccepted: boolean) => Promise<void>;
+  signup: (
+    firstName: string,
+    lastName: string,
+    email: string,
+    password: string,
+    termsAccepted: boolean
+  ) => Promise<void>;
   oauthLogin: (provider: "google" | "github") => void;
   logout: () => void;
   updateUser: (userData: Partial<User>) => void;
@@ -29,76 +35,73 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Load user from localStorage on mount
- useEffect(() => {
-  // 1️⃣ Try to get token from localStorage first
-  let storedToken = localStorage.getItem("token");
-
-  if (!storedToken) {
-    // 2️⃣ If not in localStorage, try to get it from cookie
-    storedToken = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("token="))
-      ?.split("=")[1];
-
+  // Load user session from cookie/localStorage
+  useEffect(() => {
+    const storedToken = localStorage.getItem("token");
     if (storedToken) {
-      // 3️⃣ Save cookie token into localStorage
-      localStorage.setItem("token", storedToken);
+      setToken(storedToken);
+      fetchUserProfile(storedToken);
+    } else {
+      // Try reading from cookie (non-HttpOnly)
+      const cookieToken = document.cookie
+        .split("; ")
+        .find((row) => row.startsWith("token="))
+        ?.split("=")[1];
+
+      if (cookieToken) {
+        localStorage.setItem("token", cookieToken);
+        setToken(cookieToken);
+        fetchUserProfile(cookieToken);
+      } else {
+        setIsLoading(false);
+      }
     }
-  }
 
-  if (storedToken) {
-    setToken(storedToken);
-    fetchUserProfile(storedToken);
-  } else {
-    setIsLoading(false);
-  }
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    const provider = urlParams.get("provider") as "google" | "github" | null;
+    if (code && provider) handleOAuthCallback(code, provider);
+  }, []);
 
-  // 4️⃣ Handle OAuth callback if URL has code & provider
-  const urlParams = new URLSearchParams(window.location.search);
-  const code = urlParams.get("code");
-  const provider = urlParams.get("provider") as "google" | "github" | null;
-  if (code && provider) {
-    handleOAuthCallback(code, provider);
-  }
-}, []);
-
-
+  // Fetch user profile
   const fetchUserProfile = async (authToken: string) => {
     try {
       const response = await fetch("/api/user/profile", {
         headers: { Authorization: `Bearer ${authToken}` },
+        credentials: "include", // important for cookies
       });
 
       if (response.ok) {
         const data = await response.json();
         setUser(data.user);
       } else {
-        localStorage.removeItem("token");
-        setToken(null);
+        console.warn("Failed to fetch user profile (keeping token for now)");
       }
     } catch (error) {
       console.error("Error fetching user profile:", error);
-      localStorage.removeItem("token");
-      setToken(null);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Login
   const login = async (email: string, password: string) => {
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
+        credentials: "include", // 👈 ensures cookie is stored
       });
-      const data = await response.json();
 
+      const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Login failed");
 
-      localStorage.setItem("token", data.token);
-      setToken(data.token);
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+        setToken(data.token);
+      }
+
       await fetchUserProfile(data.token);
       router.push("/");
     } catch (error: any) {
@@ -106,6 +109,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Signup
   const signup = async (
     firstName: string,
     lastName: string,
@@ -118,9 +122,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ firstName, lastName, email, password, termsAccepted }),
+        credentials: "include",
       });
-      const data = await response.json();
 
+      const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Signup failed");
 
       await login(email, password);
@@ -129,27 +134,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // OAuth login redirect
   const oauthLogin = (provider: "google" | "github") => {
-    window.location.href = `/api/auth/${provider}-login`; // Your backend endpoint generates OAuth URL and redirects
+    window.location.href = `/api/auth/${provider}-login`;
   };
 
+  // OAuth callback
   const handleOAuthCallback = async (code: string, provider: "google" | "github") => {
     try {
-      const res = await fetch(`/api/auth/oauth-callback?code=${code}&provider=${provider}`);
+      const res = await fetch(`/api/auth/oauth-callback?code=${code}&provider=${provider}`, {
+        credentials: "include",
+      });
       const data = await res.json();
+
       if (data.token) {
         localStorage.setItem("token", data.token);
         setToken(data.token);
         await fetchUserProfile(data.token);
-        router.replace("/"); // Remove code from URL
+        router.replace("/");
       }
     } catch (error) {
       console.error("OAuth callback error:", error);
     }
   };
 
+  // Logout
   const logout = () => {
     localStorage.removeItem("token");
+    fetch("/api/auth/logout", { method: "POST", credentials: "include" }); // 👈 clear server cookie
     setToken(null);
     setUser(null);
     router.push("/login");
@@ -160,9 +172,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, token, login, signup, oauthLogin, logout, updateUser, isLoading }}
-    >
+    <AuthContext.Provider value={{ user, token, login, signup, oauthLogin, logout, updateUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
